@@ -30,9 +30,9 @@ Per usarla dal telefono si può pubblicare gratis con **GitHub Pages**
 | Banca    | Stato |
 |----------|-------|
 | Revolut  | ✅ testato su un estratto conto reale (movimenti in sospeso inclusi, stornati esclusi) |
-| N26      | 🟡 parser basato sul layout tipico, da verificare con un estratto reale |
+| N26      | ✅ testato su un estratto reale ("Estratto conto preliminare" mensile) |
 | Satispay | 🟡 parser basato sul layout tipico, da verificare con un estratto reale |
-| BBVA     | 🟡 parser basato sul layout tipico, da verificare con un estratto reale |
+| BBVA     | ✅ testato su un estratto reale ("Estratto conto trimestrale": la somma dei movimenti torna con i saldi) |
 | Altre    | parser generico: riconosce righe con data + descrizione + importo |
 
 Se un estratto non viene letto bene, nella schermata *Importa* c'è **"Mostra testo estratto"**:

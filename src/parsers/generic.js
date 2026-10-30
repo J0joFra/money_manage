@@ -71,8 +71,14 @@ export function parseGeneric(lines, opts = {}) {
     current = null;
   };
 
+  // intestazioni/piè di pagina: righe identiche ripetute su più pagine (nome, indirizzo, IBAN...)
+  const pagesByText = new Map();
+  for (const l of lines) pagesByText.set(l.text, (pagesByText.get(l.text) || new Set()).add(l.page));
+  const repeated = (l) => pagesByText.get(l.text).size > 1;
+
   for (const line of lines) {
     if (opts.skipLine && opts.skipLine(line)) continue;
+    if (repeated(line) && !line.cells.some((c) => parseAmount(c.text))) continue;
     const hdr = headerColumns(line);
     if (hdr) { flush(); columns = hdr; continue; }
 
@@ -101,6 +107,7 @@ export function parseGeneric(lines, opts = {}) {
       const rightOfDesc = desc && [...line.cells, ...columns].filter((c) => c.x > desc.end).map((c) => c.x);
       current = {
         date: parseDate(dateCells[0].text),
+        page: line.page,
         amount,
         currency,
         texts: textCells.map((c) => c.text),
@@ -110,7 +117,8 @@ export function parseGeneric(lines, opts = {}) {
       continue;
     }
 
-    if (current && current.details.length < maxDetails && !amountCells.length && !dateCells.length) {
+    // i dettagli di un movimento non continuano sulla pagina successiva
+    if (current && line.page === current.page && current.details.length < maxDetails && !amountCells.length && !dateCells.length) {
       const t = cleanSpaces(line.text);
       if (!t || noise.test(t) || SUMMARY_LINE.test(t) || t.length >= 140) continue;
       // descrizione andata a capo: stessa colonna e la riga sopra arrivava quasi al bordo della colonna successiva

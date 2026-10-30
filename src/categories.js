@@ -16,7 +16,7 @@ export const CATEGORIES = [
   { name: 'Viaggi', type: 'expense', icon: '✈️', subs: ['Alloggio', 'Voli', 'Attività', 'Altro'] },
   { name: 'Assicurazioni', type: 'expense', icon: '🛡️', subs: ['Auto', 'Casa', 'Salute', 'Vita', 'Altro'] },
   { name: 'Tasse e PA', type: 'expense', icon: '🏛️', subs: ['PagoPA', 'Multe', 'Imposte', 'Bolli', 'Altro'] },
-  { name: 'Finanza', type: 'expense', icon: '💳', subs: ['Rate e BNPL', 'Commissioni bancarie', 'Interessi', 'Altro'] },
+  { name: 'Finanza', type: 'expense', icon: '💳', subs: ['Rate e BNPL', 'Prestiti e finanziamenti', 'Commissioni bancarie', 'Interessi', 'Altro'] },
   { name: 'Persone', type: 'expense', icon: '👥', subs: ['Amici', 'Famiglia', 'Collette e regali di gruppo', 'Altro'] },
   { name: 'Donazioni', type: 'expense', icon: '💝', subs: ['Beneficenza', 'Altro'] },
   { name: 'Animali', type: 'expense', icon: '🐾', subs: ['Cibo', 'Veterinario', 'Altro'] },
@@ -36,12 +36,15 @@ export const RULES = [
   // trasferimenti e risparmi (prima di tutto il resto)
   [/ricarica (dell'app )?satispay|satispay europe/i, 'Trasferimenti', 'Ricarica Satispay'],
   [/^ricarica\b|ricarica da (iban|carta|conto)/i, 'Trasferimenti', 'Ricarica Satispay', '+'],
+  [/^(revolut|n26|bbva|satispay)\b/i, 'Trasferimenti', 'Giroconto tra miei conti'],
+  [/\btrasferimento · |\bsalvadanaio\b/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/conto di investimento|salvadanaio|spazio|pocket|vault|trade republic|scalable|directa|fineco|degiro|moneyfarm/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/prelievo|atm\b|bancomat/i, 'Trasferimenti', 'Prelievo contanti', '-'],
 
   // finanza
   [/paga in 3 rate|klarna|scalapay|afterpay|paypal pay in|\brata\b/i, 'Finanza', 'Rate e BNPL', '-'],
-  [/commission|canone (conto|mensile)|imposta di bollo|spese tenuta/i, 'Finanza', 'Commissioni bancarie', '-'],
+  [/\bagos\b|findomestic|compass|cofidis|santander consumer|younited|prestito|finanziamento/i, 'Finanza', 'Prestiti e finanziamenti', '-'],
+  [/liquidazione interessi e spese|commission|canone (conto|mensile)|imposta di bollo|spese tenuta/i, 'Finanza', 'Commissioni bancarie', '-'],
 
   // trasporti
   [/tamoil|\beni\b|eni ?station|enilive|\bq8\b|\bip\b|italiana petroli|\besso\b|\bshell\b|\btotal ?erg\b|\bapi\b|repsol|carburant|benzin|distributore/i, 'Trasporti', 'Carburante', '-'],
@@ -121,7 +124,7 @@ export const RULES = [
   [/leetchi|growish|colletta|regalo/i, 'Persone', 'Collette e regali di gruppo', '-'],
 
   // entrate
-  [/stipendio|emolumenti|salary|busta paga/i, 'Entrate', 'Stipendio', '+'],
+  [/accredito competenze|stipendio|emolumenti|salary|busta paga/i, 'Entrate', 'Stipendio', '+'],
   [/rimborso|refund|storno/i, 'Entrate', 'Rimborsi', '+'],
   [/cashback/i, 'Entrate', 'Cashback', '+'],
   [/interessi|dividend/i, 'Entrate', 'Interessi e dividendi', '+'],
@@ -147,7 +150,7 @@ export function categorize(t, opts = {}) {
 
   for (const r of opts.userRules || []) {
     const m = norm(r.match);
-    if (m && (payeeN === m || textN.includes(m))) return { category: r.category, subcategory: r.subcategory, source: 'regola' };
+    if (m && (payeeN === m || new RegExp(`(^|[^a-z0-9])${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(textN))) return { category: r.category, subcategory: r.subcategory, source: 'regola' };
   }
 
   const own = (opts.ownNames || []).map(norm).filter(Boolean);

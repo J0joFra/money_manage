@@ -21,10 +21,24 @@ const docs = {
 <tr><td>04/10/2026</td><td>Bar Centrale</td><td>Pagamento</td><td class=r>-1,50 €</td></tr>
 <tr><td>06/10/2026</td><td>Ricarica</td><td>Ricarica da IBAN</td><td class=r>+100,00 €</td></tr>
 <tr><td>09/10/2026</td><td>Anna Neri</td><td>Inviato · pizza</td><td class=r>-8,00 €</td></tr></table>`,
+  // layout reale dell'estratto trimestrale: causale su più righe centrata sulla riga di data/importo
+  bbva_trimestrale: `<p style="text-align:right">MARIO ROSSI</p><h2>Estratto conto trimestrale</h2>
+<p>BIC: BBVAITMMXXX</p><p>Titolare/i: MARIO ROSSI</p>
+<p>Periodo di riferimento 01/12/2025 fino a 01/03/2026</p>
+<table style="font-size:9px"><tr><th>Data contabile</th><th>Data valuta</th><th>Causale</th><th class=r>Importo (EUR)</th><th class=r>Saldo (EUR)</th></tr>
+${[['15/12', 'BONIFICI<br>ACCREDITO COMPETENZE MESE DI', '1.500,00', '2.500,00'],
+   ['20/12', 'ADDEBITO A TUO CARICO<br>N 2025224000355716 AGOS DUCATO S.P.<br>A. Viale Fulvi', '-120,00', '2.380,00'],
+   ['02/01', 'LIQUIDAZIONE INTERESSI-<br>COMMISSIONI-SPESE<br>ACCREDITO 1,00% A FRONTE DEL SALDO<br>MENSILE', '2,10', '2.382,10'],
+   ['10/01', 'BONIFICI<br>TRASF', '-300,00', '2.082,10'],
+   ['12/01', 'ORDINI DI PAGAMENTO EMESSI IN<br>VALUTA LOCALE<br>2796575564 26503710854589', '-50,00', '2.032,10'],
+   ['20/02', 'TRASFERIMENTO PROGRAMMA IL TUO<br>CONTO<br>OPERAZIONE SALDO MASSIMO<br>SALVADANAIO', '-32,10', '2.000,00'],
+  ].map(([d, c, a, s]) => `<tr><td style="vertical-align:middle">${d}</td><td style="vertical-align:middle">${d}</td><td style="width:200px">${c}</td><td class=r style="vertical-align:middle">${a}</td><td class=r style="vertical-align:middle">${s}</td></tr>`).join('')}
+</table><p>Saldo fine trimestre: 2.000,00 (EUR)</p>`,
 };
 const expected = {
   n26: 'Amount,Date,Note,Payee,Currency\n-23.45,2026-10-02,,Esselunga,EUR\n30,2026-10-05,,Mario Bianchi,EUR\n-13.99,2026-10-10,,Netflix,EUR\n',
   bbva: 'Amount,Date,Note,Payee,Currency\n-45,2026-10-03,,ENI STATION MILANO,EUR\n20,2026-10-07,,LUCA VERDI,EUR\n-1012.3,2026-10-15,,FARMACIA CENTRALE,EUR\n',
+  bbva_trimestrale: 'Amount,Date,Note,Payee,Currency\n1500,2025-12-15,,Accredito competenze,EUR\n-120,2025-12-20,,AGOS DUCATO S.P.A.,EUR\n2.1,2026-01-02,,Liquidazione interessi e spese,EUR\n-300,2026-01-10,,Bonifico,EUR\n-50,2026-01-12,,Ordine di pagamento,EUR\n-32.1,2026-02-20,,Salvadanaio,EUR\n',
   satispay: 'Amount,Date,Note,Payee,Currency\n-1.5,2026-10-04,,Bar Centrale,EUR\n100,2026-10-06,,Ricarica,EUR\n-8,2026-10-09,,Anna Neri,EUR\n',
 };
 (async () => {
