@@ -4,7 +4,7 @@
 // NB: scritto senza un estratto conto di esempio: se qualcosa non torna usa "Mostra testo estratto".
 
 import { parseGeneric } from './generic.js';
-import { parseAmount, parseDate, round2 } from './common.js';
+import { parseAmount, parseDate, round2, findIban } from './common.js';
 
 export const id = 'n26';
 export const label = 'N26';
@@ -16,10 +16,16 @@ export function detect(lines) {
 
 export function parse(lines) {
   const transactions = parseGeneric(lines, {
-    noise: /^(data valuta|value date|valuta|pagina|page|iban|bic)\b|^\d+\s*(\/|di|of)\s*\d+$|N26 Bank|Estratto conto|Data di emissione|Emesso in data|^Entrate$|^Uscite$/i,
-    // "Mastercard • Ristoranti" -> "Ristoranti" (utile come nota per la categoria)
-    cleanPart: (p) => p.replace(/^(Mastercard|Maestro|Visa)\s*•\s*/i, '').replace(/\s*•?\s*\b(IBAN|BIC):?\s*[A-Z0-9]+/gi, '').trim(),
+    noise: /^(data valuta|value date|valuta|pagina|page|bic)\b|^\d+\s*(\/|di|of)\s*\d+$|N26 Bank|Estratto conto|Data di emissione|Emesso in data|^Entrate$|^Uscite$/i,
+    // "Mastercard • Ristoranti" -> "Ristoranti"; l'IBAN della controparte viene tolto dalla nota e salvato a parte
+    cleanPart: (p) => p.replace(/^(Mastercard|Maestro|Visa)\s*•\s*/i, '').replace(/^(IBAN:\s*[A-Z0-9]+)(\s*•\s*BIC:?\s*[A-Z0-9]+)?/i, '$1').trim(),
   });
+  for (const t of transactions) {
+    const iban = findIban(t.note);
+    if (!iban) continue;
+    t.counterIban = iban;
+    t.note = t.note.replace(/\s*·?\s*IBAN:\s*[A-Z0-9]+/i, '').replace(/^ · /, '').trim() || t.payee;
+  }
   // intestatario: riga del piè di pagina "NOME COGNOME   Emesso in data"
   const holder = lines.find((l) => l.cells.length > 1 && /Emesso in data/i.test(l.cells[1].text))?.cells[0].text || null;
   const saldo = lines.find((l) => /nuovo saldo/i.test(l.text));
@@ -34,5 +40,7 @@ export function parse(lines) {
       ? [`saldo precedente ${amountOf(prev).toFixed(2)} + movimenti ${sum.toFixed(2)} ≠ nuovo saldo ${closing.toFixed(2)}`] : [];
     balance = { date: period ? parseDate(period[1]) : null, booked: closing, pending: 0, available: closing, warnings };
   }
-  return { holder, transactions, balance };
+  // IBAN del conto: piè di pagina "IBAN: IT.. • BIC: NTSB..."
+  const iban = findIban(lines.find((l) => /IBAN:.*NTSB/i.test(l.text))?.text);
+  return { holder, iban, transactions, balance };
 }

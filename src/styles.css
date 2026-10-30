@@ -152,3 +152,14 @@ dialog:has(.dups) { max-width: 720px; }
 .dup-pair > button { grid-column: 1 / -1; justify-self: start; }
 .dup-side { background: var(--surface-2); border-radius: 8px; padding: 8px; font-size: 13px; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .dup-pair { grid-template-columns: 1fr; } }
+
+svg.flows { width: 100%; height: auto; display: block; }
+svg.flows .flow path { fill: none; stroke: var(--bar); stroke-opacity: .55; }
+svg.flows .flow:hover path { stroke-opacity: 1; }
+svg.flows .flow text { font-size: 14px; fill: var(--text-2); font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }
+svg.flows .arrowhead { fill: var(--bar); }
+svg.flows .node rect { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+svg.flows .node.ext rect { stroke: var(--border); stroke-dasharray: 4 3; }
+svg.flows .node .nm { font-size: 15px; font-weight: 600; fill: var(--text); }
+svg.flows .node .bl { font-size: 13px; fill: var(--text-2); font-variant-numeric: tabular-nums; }
+.flows-wrap { overflow-x: auto; }

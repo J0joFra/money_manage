@@ -16,6 +16,7 @@
       <button data-tab="summary" class="active">Riepilogo</button>
       <button data-tab="list">Movimenti</button>
       <button data-tab="import">Importa</button>
+      <button data-tab="accounts">Conti</button>
       <button data-tab="rules">Regole</button>
       <button data-tab="settings">Impostazioni</button>
     </nav>
@@ -78,6 +79,30 @@
         </label>
       </div>
       <div id="import-results"></div>
+    </section>
+
+    <!-- CONTI -->
+    <section id="tab-accounts" class="tab">
+      <div class="card">
+        <h2>Spostamenti tra i tuoi conti</h2>
+        <p class="hint">Giroconti, ricariche, prelievi e salvadanai: da quale conto a quale. Il conto di arrivo viene riconosciuto
+          dall'abbinamento uscita/entrata, dall'IBAN o dal nome (Revolut, N26, Satispay...). Lo spessore della freccia è proporzionale all'importo.</p>
+        <div class="toolbar"><label>Periodo <select id="acc-period"></select></label></div>
+        <div id="acc-diagram"></div>
+        <p class="hint" id="acc-unknown"></p>
+        <div class="table-wrap"><div id="acc-flows"></div></div>
+      </div>
+      <div class="card">
+        <h2>I tuoi conti</h2>
+        <p class="hint">L'IBAN viene letto dagli estratti conto; aggiungilo a mano per i conti di cui non hai ancora un estratto.
+          Per i contanti (e i conti senza estratto) imposta il saldo a mano e aggiornalo ogni tanto.</p>
+        <div class="table-wrap"><table class="tx" id="acc-table"></table></div>
+        <form id="acc-add" class="toolbar" style="margin-top:12px">
+          <input id="acc-name" placeholder="Nuovo conto (es. PayPal)" required>
+          <input id="acc-iban" placeholder="IBAN (facoltativo)" size="30">
+          <button>Aggiungi conto</button>
+        </form>
+      </div>
     </section>
 
     <!-- REGOLE -->

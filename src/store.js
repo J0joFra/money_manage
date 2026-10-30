@@ -6,7 +6,10 @@ const KEY = 'spese.v1';
 
 // balances: { [conto]: { date, booked, pending, available } } saldo letto dall'ultimo estratto conto
 // notDuplicates: coppie di id "a|b" che l'utente ha indicato come movimenti diversi
-const empty = () => ({ transactions: [], rules: [], balances: {}, notDuplicates: [], settings: { ownNames: [] } });
+// accounts: { [conto]: { iban } } i tuoi conti, per capire dove vanno i giroconti
+const empty = () => ({ transactions: [], rules: [], balances: {}, notDuplicates: [], accounts: {}, settings: { ownNames: [] } });
+
+export const CASH = 'Contanti';
 
 export function load() {
   try {
@@ -92,6 +95,8 @@ export function addTransactions(state, txs) {
     }
     skipped++;
     if (!t.pending && old.pending) delete old.pending;
+    if (t.counterIban && !old.counterIban) old.counterIban = t.counterIban; // reimportando si completano i collegamenti
+    if (t.source && !old.source) old.source = t.source;
     if (moreDetailed(t, old)) {
       Object.assign(old, { payee: t.payee, note: t.note });
       Object.assign(old, applyCategory(old, state));
@@ -183,4 +188,63 @@ export function linkTransfers(state) {
       t.catSource = 'abbinato';
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Conti collegati: per ogni trasferimento capisce il conto di partenza e quello di arrivo.
+
+const SAVINGS = 'Salvadanaio e conti deposito';
+
+/** Il conto "dall'altra parte" di un trasferimento, oppure null se non si riesce a capirlo. */
+export function counterpartAccount(t, state) {
+  if (t.category !== 'Trasferimenti') return null;
+  if (t.linkedId) {
+    const other = state.transactions.find((x) => x.id === t.linkedId);
+    if (other) return other.account;
+  }
+  if (t.subcategory === SAVINGS) return `${t.account} · salvadanaio`;
+  if (/^conversione in [a-z]{3}\b|exchanged to/i.test(t.payee)) return `${t.account} · altre valute`;
+  if (t.counterIban) {
+    const hit = Object.entries(state.accounts || {}).find(([name, a]) => a.iban && a.iban === t.counterIban && name !== t.account);
+    if (hit) return hit[0];
+  }
+  if (t.subcategory === 'Prelievo contanti') return CASH;
+  if (t.subcategory === 'Ricarica Satispay' && t.account !== 'Satispay') return 'Satispay';
+  if (t.subcategory === 'Investimenti e risparmi' && /investiment/i.test(`${t.payee} ${t.note}`)) return `${t.account} · investimenti`;
+  const text = `${t.payee} ${t.note}`;
+  const byName = [['Revolut', /revolut/i], ['N26', /\bn26\b/i], ['BBVA', /\bbbva\b/i], ['Satispay', /satispay/i], ['PayPal', /paypal/i]]
+    .find(([name, re]) => name !== t.account && re.test(text));
+  if (byName) return byName[0];
+  return null;
+}
+
+/**
+ * Flussi di denaro tra i tuoi conti nel periodo: [{ from, to, amount, count }].
+ * Per un giroconto abbinato conta un solo lato (l'uscita), così lo stesso denaro non vale doppio.
+ */
+export function accountFlows(state, inPeriod = () => true) {
+  const flows = new Map();
+  for (const t of state.transactions) {
+    if (t.category !== 'Trasferimenti' || !inPeriod(t)) continue;
+    if (t.amount > 0 && t.linkedId && state.transactions.some((x) => x.id === t.linkedId)) continue;
+    const other = counterpartAccount(t, state) || 'Altro / sconosciuto';
+    const [from, to] = t.amount < 0 ? [t.account, other] : [other, t.account];
+    const k = `${from}→${to}`;
+    const f = flows.get(k) || { from, to, amount: 0, count: 0 };
+    f.amount += Math.abs(t.amount);
+    f.count++;
+    flows.set(k, f);
+  }
+  return [...flows.values()].sort((a, b) => b.amount - a.amount);
+}
+
+/** Saldo contanti: l'ultimo saldo impostato a mano + prelievi successivi + movimenti registrati sul conto Contanti. */
+export function cashBalance(state) {
+  const b = state.balances?.[CASH];
+  if (!b) return null;
+  const after = (t) => t.date > b.date || (t.date === b.date && (t.createdAt || 0) > (b.setAt || 0));
+  const moves = state.transactions.filter((t) => t.account === CASH && after(t)).reduce((s, t) => s + t.amount, 0);
+  const withdrawn = -state.transactions.filter((t) => t.subcategory === 'Prelievo contanti' && t.account !== CASH && after(t))
+    .reduce((s, t) => s + t.amount, 0);
+  return { ...b, available: b.available + moves + withdrawn, moves, withdrawn };
 }

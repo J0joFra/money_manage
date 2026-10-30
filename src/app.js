@@ -3,7 +3,8 @@ import { extractLines } from './pdf-text.js';
 import { parseStatement, PARSERS } from './parsers/index.js';
 import { parseCsv, toCsv } from './csv.js';
 import { CATEGORIES, categoryType } from './categories.js';
-import { load, save, addTransactions, applyCategory, linkTransfers, matchExisting, findSavedDuplicates, newId } from './store.js';
+import { load, save, addTransactions, applyCategory, linkTransfers, matchExisting, findSavedDuplicates, newId,
+  CASH, cashBalance, accountFlows, counterpartAccount } from './store.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -137,6 +138,7 @@ function renderSummary() {
 // (es. BBVA: saldo del trimestrale al 01/10 + movimenti di ottobre dall'esportazione "Ultimi movimenti")
 function currentBalances() {
   return Object.entries(state.balances || {}).map(([acc, b]) => {
+    if (acc === CASH) return [acc, { ...cashBalance(state), cash: true }];
     const later = state.transactions.filter((t) => t.account === acc && b.date && t.date > b.date);
     const delta = later.reduce((s, t) => s + t.amount, 0);
     const last = later.reduce((d, t) => (t.date > d ? t.date : d), b.date || '');
@@ -153,8 +155,53 @@ function renderBalances() {
     `<div class="tile"><div class="k">${esc(acc)}${b.date ? ` · al ${b.date.slice(8)}/${b.date.slice(5, 7)}/${b.date.slice(0, 4)}` : ''}</div>
       <div class="v">${eur(b.available)}</div>
       ${b.pending && !b.rolled ? `<div class="muted">contabile ${eur(b.booked)} · in sospeso ${eur(b.pending)}</div>` : ''}
-      ${b.rolled ? `<div class="muted">saldo estratto al ${b.from.slice(8)}/${b.from.slice(5, 7)} + ${b.rolled} movimenti successivi</div>` : ''}</div>`).join('')}
+      ${b.rolled ? `<div class="muted">saldo ${b.manual ? 'impostato' : 'estratto'} al ${b.from.slice(8)}/${b.from.slice(5, 7)} + ${b.rolled} movimenti successivi</div>` : ''}
+      ${b.cash ? `<div class="muted">${b.withdrawn ? `+ prelievi ${eur(b.withdrawn)} ` : ''}${b.moves ? `${b.moves < 0 ? '−' : '+'} spese registrate ${eur(Math.abs(b.moves))}` : ''}</div>
+        <button class="link" data-setbal="${esc(acc)}">Aggiorna saldo</button>` : ''}</div>`).join('')}
+    ${state.balances?.[CASH] ? '' : `<div class="tile"><div class="k">💵 Contanti</div><div class="v muted">—</div><button class="link" data-setbal="${CASH}">Imposta saldo contanti</button></div>`}
     <div class="tile"><div class="k">Totale conti</div><div class="v">${eur(total)}</div></div></div>`;
+}
+
+// ---------- saldo impostato a mano (contanti, o conti senza estratto come PayPal) ----------
+document.addEventListener('click', (e) => {
+  const acc = e.target.closest('[data-setbal]')?.dataset.setbal;
+  if (acc != null) setBalanceDialog(acc);
+});
+
+function setBalanceDialog(acc) {
+  const isCash = acc === CASH;
+  const current = isCash ? cashBalance(state) : currentBalances().find(([a]) => a === acc)?.[1];
+  const today = new Date().toISOString().slice(0, 10);
+  const dlg = $('#dlg');
+  dlg.innerHTML = `<form method="dialog">
+    <h2>${isCash ? '💵 Saldo contanti' : `Saldo ${esc(acc)}`}</h2>
+    ${current ? `<p class="hint">Saldo calcolato ora: <b>${eur(current.available)}</b></p>` : ''}
+    <label>Quanto hai ${isCash ? 'in contanti' : 'sul conto'} oggi?<input name="amount" type="number" step="0.01" required value="${current ? current.available.toFixed(2) : ''}"></label>
+    <label>Alla data<input name="date" type="date" value="${today}" required></label>
+    ${current ? `<label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="diff" checked>
+      Registra la differenza come movimento (es. spese in contanti che non hai segnato)</label>` : ''}
+    <div class="toolbar"><button value="ok">Salva</button><button value="cancel" class="secondary" formnovalidate>Annulla</button></div>
+  </form>`;
+  dlg.onclose = () => {
+    if (dlg.returnValue !== 'ok') return;
+    const f = Object.fromEntries(new FormData(dlg.querySelector('form')));
+    const amount = Number(f.amount);
+    if (Number.isNaN(amount)) return;
+    const diff = current ? Math.round((amount - current.available) * 100) / 100 : 0;
+    if (f.diff && diff) {
+      state.transactions.push(applyCategory({
+        id: newId(), createdAt: Date.now(), date: f.date, amount: diff, currency: 'EUR', account: acc,
+        payee: diff < 0 ? (isCash ? 'Spese in contanti non registrate' : 'Differenza saldo') : 'Differenza saldo (in più)',
+        note: `Allineamento saldo a ${eur(amount)}`,
+      }, state));
+      state.transactions.sort((a, b) => b.date.localeCompare(a.date));
+    }
+    state.balances[acc] = { date: f.date, booked: amount, pending: 0, available: amount, manual: true, setAt: Date.now() };
+    state.accounts[acc] = state.accounts[acc] || {};
+    persist();
+    render();
+  };
+  dlg.showModal();
 }
 
 // Soldi spostati tra i tuoi conti e contanti
@@ -177,16 +224,8 @@ function renderTransfers(txs, period) {
     return list.length ? `<tr><td>${label}<div class="muted">${list.length} moviment${list.length === 1 ? 'o' : 'i'}</div></td><td class="num">${eur(moved)}</td></tr>` : '';
   }).join('');
 
-  // contanti: prelievi (fino alla fine del periodo) + movimenti registrati sul conto "Contanti"
-  const end = period ? period + '\uffff' : '\uffff';
-  const upTo = state.transactions.filter((t) => t.date <= end);
-  const withdrawn = -upTo.filter((t) => t.subcategory === 'Prelievo contanti').reduce((s, t) => s + t.amount, 0);
-  const cashMoves = upTo.filter((t) => /^contanti$/i.test(t.account || '')).reduce((s, t) => s + t.amount, 0);
   $('#sum-transfers').innerHTML = (rows ? `<table class="tx">${rows}</table>` : '<p class="hint">Nessun trasferimento nel periodo.</p>') +
-    `<h2 class="mt">💵 Contanti in tasca (stima)</h2>
-     <p class="v ${withdrawn + cashMoves < 0 ? 'neg' : ''}" style="font-size:22px;font-weight:700;margin:0">${eur(withdrawn + cashMoves)}</p>
-     <p class="hint">Prelievi ${eur(withdrawn)} − spese in contanti ${eur(-cashMoves)}.
-       Registra le spese in contanti con <button class="link" data-go="list">+ Aggiungi a mano</button> (conto "Contanti").</p>`;
+    '<p class="hint" style="margin-top:10px"><button class="link" data-go="accounts">Vedi da quale conto a quale →</button></p>';
 }
 
 $('#sum-period').addEventListener('change', renderSummary);
@@ -363,7 +402,7 @@ $('#btn-add').addEventListener('click', () => {
   dlg.onclose = () => {
     if (dlg.returnValue !== 'ok') return;
     const f = Object.fromEntries(new FormData(dlg.querySelector('form')));
-    let t = { id: newId(), date: f.date, amount: Number(f.amount), payee: f.payee, note: f.note, currency: 'EUR', account: f.account || 'Contanti' };
+    let t = { id: newId(), createdAt: Date.now(), date: f.date, amount: Number(f.amount), payee: f.payee, note: f.note, currency: 'EUR', account: f.account || 'Contanti' };
     if (Number.isNaN(t.amount)) return;
     if (f.cat) { const [category, subcategory] = f.cat.split('|'); t = { ...t, category, subcategory, catSource: 'manuale' }; }
     else t = applyCategory(t, state);
@@ -482,6 +521,7 @@ function renderImport(id) {
     const act = e.target.dataset.act;
     if (act === 'save') {
       const { added, skipped, improved } = addTransactions(state, imp.txs);
+      if (imp.result.iban) state.accounts[imp.account] = { ...state.accounts[imp.account], iban: imp.result.iban };
       const bal = imp.result.balance;
       const prev = state.balances[imp.account];
       if (bal && (!prev || !prev.date || (bal.date || '') >= prev.date)) {
@@ -503,6 +543,139 @@ function renderImport(id) {
       box.remove();
     }
   };
+}
+
+// ---------- CONTI ----------
+// Diagramma degli spostamenti tra i conti (giroconti, ricariche, prelievi, salvadanai) e gestione dei conti.
+
+function renderAccounts() {
+  fillSelect($('#acc-period'), periodOptions());
+  const period = $('#acc-period').value;
+  const flows = accountFlows(state, (t) => inPeriod(t, period));
+  const balances = Object.fromEntries(currentBalances());
+  $('#acc-diagram').innerHTML = flows.length ? flowDiagram(flows, balances) : '<p class="empty">Nessuno spostamento tra conti nel periodo.</p>';
+  $('#acc-flows').innerHTML = flows.length ? `<table class="tx"><thead><tr><th>Da</th><th></th><th>A</th><th style="text-align:right">Importo</th></tr></thead><tbody>${flows.map((f) =>
+    `<tr><td>${esc(f.from)}</td><td>→</td><td>${esc(f.to)}<div class="muted">${f.count} moviment${f.count === 1 ? 'o' : 'i'}</div></td><td class="num">${eur(f.amount)}</td></tr>`).join('')}</tbody></table>` : '';
+  const unknown = flows.filter((f) => /sconosciuto/.test(f.from + f.to)).reduce((s, f) => s + f.count, 0);
+  $('#acc-unknown').innerHTML = unknown
+    ? `${unknown} trasferimenti non hanno un conto di destinazione riconoscibile: aggiungi l'IBAN del conto qui sotto o importa anche l'estratto dell'altro conto.` : '';
+
+  const names = [...new Set([...accounts(), ...Object.keys(state.accounts || {}), ...Object.keys(state.balances || {}), CASH])];
+  $('#acc-table').innerHTML = `<thead><tr><th>Conto</th><th>IBAN</th><th style="text-align:right">Saldo</th><th></th></tr></thead><tbody>${names.map((n) => {
+    const b = balances[n];
+    return `<tr><td class="payee">${n === CASH ? '💵 ' : ''}${esc(n)}</td>
+      <td>${n === CASH ? '<span class="muted">—</span>' : `<input data-iban="${esc(n)}" value="${esc(state.accounts?.[n]?.iban || '')}" placeholder="IT..." size="30">`}</td>
+      <td class="num">${b ? eur(b.available) : '<span class="muted">—</span>'}</td>
+      <td><button class="link" data-setbal="${esc(n)}">${b ? 'Aggiorna saldo' : 'Imposta saldo'}</button></td></tr>`;
+  }).join('')}</tbody>`;
+}
+
+$('#acc-period').addEventListener('change', renderAccounts);
+$('#acc-table').addEventListener('change', (e) => {
+  const acc = e.target.dataset.iban;
+  if (acc == null) return;
+  state.accounts[acc] = { ...state.accounts[acc], iban: e.target.value.replace(/\s/g, '').toUpperCase() || undefined };
+  linkTransfers(state);
+  persist();
+  renderAccounts();
+});
+$('#acc-add').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = $('#acc-name').value.trim();
+  if (!name) return;
+  state.accounts[name] = { ...state.accounts[name], iban: $('#acc-iban').value.replace(/\s/g, '').toUpperCase() || undefined };
+  $('#acc-name').value = '';
+  $('#acc-iban').value = '';
+  persist();
+  renderAccounts();
+});
+
+// Diagramma ad archi: i conti principali su una riga, le "tasche" di un conto (salvadanaio, investimenti,
+// altre valute) sotto il conto a cui appartengono. Gli spostamenti verso destra passano sopra la riga,
+// quelli verso sinistra sotto, così andata e ritorno non si sovrappongono.
+function flowDiagram(flows, balances) {
+  const all = [...new Set(flows.flatMap((f) => [f.from, f.to]))];
+  const parentOf = (n) => (n.includes(' · ') ? n.split(' · ')[0] : null);
+  const volume = (n) => flows.filter((f) => f.from === n || f.to === n).reduce((s, f) => s + f.amount, 0);
+  const mains = [...new Set(all.map((n) => parentOf(n) || n))].sort((a, b) => volume(b) - volume(a));
+  // il conto con più movimento al centro, gli altri alternati a destra e sinistra
+  const order = [];
+  mains.forEach((n, i) => (i % 2 ? order.unshift(n) : order.push(n)));
+  const subsOf = (m) => all.filter((n) => parentOf(n) === m);
+
+  const SUB_W = 150;
+  const widths = order.map((m) => Math.max(170, subsOf(m).length * SUB_W));
+  const W = Math.max(560, widths.reduce((a, b) => a + b, 0) + 40);
+  const maxSpan = W - 40;
+  const topRoom = 40 + Math.min(150, maxSpan * 0.22);
+  const ROW_Y = topRoom + 30;
+  const SUB_Y = ROW_Y + 210;
+  const H = SUB_Y + 60;
+  const pos = {};
+  let x = 20;
+  order.forEach((m, i) => {
+    pos[m] = { x: x + widths[i] / 2, y: ROW_Y };
+    const subs = subsOf(m);
+    subs.forEach((n, j) => { pos[n] = { x: x + widths[i] / 2 + (j - (subs.length - 1) / 2) * SUB_W, y: SUB_Y }; });
+    x += widths[i];
+  });
+
+  const max = Math.max(...flows.map((f) => f.amount));
+  const label = (v) => eur(v).replace(/,\d\d\s/, ' ');
+  const edges = flows.map((f) => {
+    const a = pos[f.from];
+    const b = pos[f.to];
+    const w = 1.5 + (f.amount / max) * 9;
+    let d;
+    let lx;
+    let ly;
+    if (a.y === b.y) {
+      // tra conti principali: arco sopra (verso destra) o sotto (verso sinistra)
+      const dir = b.x > a.x ? -1 : 1;
+      const h = Math.min(150, Math.abs(b.x - a.x) * 0.22) * dir;
+      const sx = a.x + (b.x > a.x ? 30 : -30);
+      const ex = b.x + (b.x > a.x ? -30 : 30);
+      const sy = a.y + dir * 22;
+      const ey = b.y + dir * 22;
+      d = `M${sx},${sy} C${sx},${sy + h} ${ex},${ey + h} ${ex},${ey}`;
+      lx = (sx + ex) / 2;
+      ly = sy + h * 0.75 + (dir < 0 ? -4 : 14);
+    } else {
+      // verso/da una "tasca" sotto il conto: due linee affiancate (giù a sinistra, su a destra)
+      const down = b.y > a.y;
+      const off = down ? -10 : 10;
+      const sx = a.x + off;
+      const ex = b.x + off;
+      const sy = a.y + (down ? 26 : -20);
+      const ey = b.y + (down ? -20 : 26);
+      d = `M${sx},${sy} C${sx},${(sy + ey) / 2} ${ex},${(sy + ey) / 2} ${ex},${ey}`;
+      // etichetta vicino alla tasca, dove le linee sono già separate
+      const t = 0.72;
+      lx = (down ? sx : ex) + (ex - sx) * (down ? t : 1 - t) + (down ? -8 : 8);
+      ly = sy + (ey - sy) * (down ? t : 1 - t);
+      return `<g class="flow"><title>${esc(f.from)} → ${esc(f.to)}: ${eur(f.amount)} (${f.count} movimenti)</title>
+        <path d="${d}" stroke-width="${w.toFixed(1)}" marker-end="url(#arrow)"/>
+        <text x="${lx}" y="${ly}" text-anchor="${down ? 'end' : 'start'}">${label(f.amount)}</text></g>`;
+    }
+    return `<g class="flow"><title>${esc(f.from)} → ${esc(f.to)}: ${eur(f.amount)} (${f.count} movimenti)</title>
+      <path d="${d}" stroke-width="${w.toFixed(1)}" marker-end="url(#arrow)"/>
+      <text x="${lx}" y="${ly}" text-anchor="middle">${label(f.amount)}</text></g>`;
+  }).join('');
+
+  const nodeEls = all.map((n) => {
+    const p = pos[n];
+    const sub = parentOf(n);
+    const name = sub ? n.split(' · ')[1] : n;
+    const bal = balances[n];
+    const wBox = Math.max(sub ? 110 : 120, name.length * 8 + 24);
+    const h = bal ? 46 : 32;
+    return `<g class="node${bal ? '' : ' ext'}"><rect x="${p.x - wBox / 2}" y="${p.y - h / 2}" width="${wBox}" height="${h}" rx="10"/>
+      <text x="${p.x}" y="${p.y + (bal ? -3 : 5)}" text-anchor="middle" class="nm">${esc(name)}</text>
+      ${bal ? `<text x="${p.x}" y="${p.y + 15}" text-anchor="middle" class="bl">${eur(bal.available)}</text>` : ''}</g>`;
+  }).join('');
+  return `<div class="flows-wrap"><svg viewBox="0 0 ${W} ${H}" class="flows" style="min-width:${Math.min(W, 900)}px" role="img" aria-label="Spostamenti di denaro tra i tuoi conti">
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>${edges}${nodeEls}</svg></div>`;
 }
 
 // ---------- REGOLE ----------
@@ -587,5 +760,6 @@ function render() {
   if (active === 'tab-list') renderList();
   if (active === 'tab-rules') renderRules();
   if (active === 'tab-settings') renderSettings();
+  if (active === 'tab-accounts') renderAccounts();
 }
 render();

@@ -6,7 +6,7 @@
 // riga con data e importo: alcune righe stanno sopra, altre sotto. Per assegnarle al movimento giusto
 // si sfrutta la simmetria: il blocco si estende sotto la riga della data quanto si estende sopra.
 
-import { parseDate, parseAmount, cleanSpaces, round2 } from './common.js';
+import { parseDate, parseAmount, cleanSpaces, round2, findIban } from './common.js';
 import { parseGeneric } from './generic.js';
 
 export const id = 'bbva';
@@ -103,7 +103,8 @@ export function parse(lines) {
     }
     balance = { date: periodEnd ? parseDate(periodEnd[1]) : txs[txs.length - 1]?.date, booked: closing, pending: 0, available: closing, warnings };
   }
-  return { holder, transactions: txs, balance };
+  const iban = findIban(lines.find((l) => /^IBAN/i.test(l.cells[0].text))?.text);
+  return { holder, iban, transactions: txs, balance };
 }
 
 function build(date, amount, texts) {
@@ -173,7 +174,10 @@ function parseUltimiMovimenti(lines) {
     }
   }
   flush();
-  return { holder: null, transactions: txs };
+  // l'IBAN del conto è il beneficiario dei bonifici ricevuti
+  const iban = txs.find((t) => t.ownIban)?.ownIban || null;
+  for (const t of txs) delete t.ownIban;
+  return { holder: null, iban, transactions: txs };
 }
 
 const titleCase = (s) => s.toLowerCase().replace(/(^|[\s'.-])\p{L}/gu, (m) => m.toUpperCase());
@@ -195,11 +199,15 @@ function buildMovimento(m) {
   else { type = kind; payee = rest || name || kind; }
   const useless = (x) => !x || x === payee || x === type || /^commissioni-spese$/i.test(x);
   const extra = [useless(rest) ? '' : rest, useless(name) ? '' : name, iban || ''].filter(Boolean);
+  // nei bonifici ricevuti l'IBAN in colonna "Beneficiario" è il tuo, negli altri è quello della controparte
+  const received = type === 'Bonifico ricevuto';
   return {
     date: m.date,
     amount: round2(m.amount),
     currency: 'EUR',
     payee: cleanSpaces(payee) || type,
     note: [type, ...extra].join(' · '),
+    counterIban: !received && iban ? iban : undefined,
+    ownIban: received && iban ? iban : undefined,
   };
 }

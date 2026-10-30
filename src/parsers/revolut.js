@@ -3,7 +3,7 @@
 // ogni movimento ha una riga con data/descrizione/importi e righe di dettaglio
 // ("A: ...", "Da: ...", "Riferimento: ...", "ID transazione: ...", "Carta: ...").
 
-import { DATE_RE, parseDate, parseAmount, nearestColumn, cleanSpaces, round2 } from './common.js';
+import { DATE_RE, parseDate, parseAmount, nearestColumn, cleanSpaces, round2, findIban } from './common.js';
 
 export const id = 'revolut';
 export const label = 'Revolut';
@@ -100,6 +100,7 @@ export function parse(lines) {
   flush();
   return {
     holder: holder ? cleanSpaces(holder.text) : null,
+    iban: findIban(lines.find((l) => l.page === 1 && /^IBAN\b/.test(l.text))?.text),
     transactions: txs,
     balance: closing == null ? null : statementBalance(opening, closing, booked, txs, periodEnd),
   };
@@ -137,6 +138,7 @@ function finalize(c, currency) {
     payee: cleanPayee(c.desc),
     note,
     pending: c.pending || undefined,
+    counterIban: findIban(counterparty) || undefined,
   };
   // "Costo: 0,62€" (es. conversioni di valuta): l'importo in tabella è già al netto della commissione.
   // La separo in un movimento a parte così la commissione risulta tra le spese.

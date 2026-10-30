@@ -14,6 +14,11 @@ App web gratuita e personale per tenere traccia delle spese partendo dagli estra
 - **Giroconti e contanti**: riconosce i soldi spostati tra i tuoi conti (anche abbinando uscita ed entrata) e i prelievi
 - **Duplicati**: lo stesso movimento importato da estratti diversi (o sovrapposti) viene riconosciuto da conto + data + importo
   e saltato; se il nuovo estratto è più dettagliato aggiorna il beneficiario. In *Movimenti → Trova duplicati* puoi controllare quelli già salvati
+- **Conti collegati** (scheda *Conti*): diagramma di quanto sposti da un conto all'altro (giroconti, ricariche,
+  prelievi, salvadanai). Il conto di arrivo viene riconosciuto dall'abbinamento uscita/entrata, dall'IBAN
+  (letto dagli estratti o inserito a mano) o dal nome
+- **Contanti** (e conti senza estratto): saldo impostato a mano, aggiornato con prelievi e spese registrate;
+  quando lo riallinei, la differenza può diventare una "spesa in contanti non registrata"
 - **Salvadanai / conti deposito**: i trasferimenti interni allo stesso conto non sono spese né entrate
 - Esporta CSV (`Amount,Date,Note,Payee,Currency,Category,Subcategory,Account`) e backup JSON
 

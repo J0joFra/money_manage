@@ -33,6 +33,8 @@ export function categoryType(name) {
 
 // [regex sul testo "payee note", categoria, sottocategoria, segno ('-' solo spese, '+' solo entrate, undefined entrambi), importo esatto (facoltativo)]
 export const RULES = [
+  // famiglia: prima di tutte le altre regole
+  [/maria francalanci/i, 'Persone', 'Famiglia', '-'],
   // ordini di pagamento ricorrenti da BBVA: 50 € risparmio mensile verso N26, 600 € verso Revolut (spese quotidiane)
   [/^ordine di pagamento\b/i, 'Trasferimenti', 'Investimenti e risparmi', '-', 50],
   [/^ordine di pagamento\b/i, 'Trasferimenti', 'Giroconto tra miei conti', '-', 600],

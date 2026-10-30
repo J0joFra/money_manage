@@ -75,3 +75,12 @@ export function nearestColumn(columns, cell) {
   }
   return best;
 }
+
+// IBAN (anche scritto a gruppi "IT70 O035 7601 ...") -> forma compatta, oppure null
+export const IBAN_IN_TEXT = /\b([A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){2,7}(?:\s?[A-Z0-9]{1,4})?)\b/;
+export function findIban(text) {
+  const m = (text || '').match(IBAN_IN_TEXT);
+  if (!m) return null;
+  const iban = m[1].replace(/\s/g, '');
+  return iban.length >= 15 && /\d/.test(iban.slice(4)) ? iban : null;
+}
