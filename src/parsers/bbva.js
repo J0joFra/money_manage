@@ -195,10 +195,22 @@ function buildMovimento(m) {
   else if (/^Addebito a tuo carico/i.test(kind)) { type = 'Addebito diretto'; payee = rest.replace(/^N \d{8,}\s*/, '').replace(/\s+(Viale|Via|V\.le|Piazza|Corso)\b.*$/i, ''); }
   else if (/^Liquidazione interessi/i.test(kind)) { type = 'Liquidazione interessi e spese'; payee = type; }
   else if (/^Trasferimento/i.test(kind)) { type = 'Trasferimento'; payee = /salvadanaio/i.test(causale) ? 'Salvadanaio' : rest || name || 'Trasferimento'; }
-  else if (/^Pagamento con carta/i.test(rest)) { type = 'Pagamento con carta'; payee = titleCase(kind); }
+  else if (m.causale.some((p) => /^pagamento con carta$/i.test(p))) {
+    // esercente nella prima riga; le eventuali righe in mezzo sono città e paese ("milano", "it")
+    type = m.amount > 0 ? 'Rimborso carta' : 'Pagamento con carta';
+    payee = titleCase(kind);
+    const where = m.causale.slice(1).filter((p) => !/^pagamento con carta$/i.test(p)).join(' ');
+    m.where = cleanSpaces(where);
+  }
+  else if (/^Comm\. rit\. cont/i.test(kind)) { type = 'Commissione prelievo'; payee = 'Commissione prelievo contanti'; }
+  else if (/^Rit\. contanti/i.test(kind)) { type = 'Prelievo contanti'; payee = 'Prelievo contanti'; }
+  else if (/^(Cashback|Accredito per trasferimento|Bonus)/i.test(kind) || /promozione commerciale/i.test(causale)) {
+    type = kind;
+    payee = cleanSpaces(causale.replace(/\s+Altro$/, ''));
+  }
   else { type = kind; payee = rest || name || kind; }
   const useless = (x) => !x || x === payee || x === type || /^commissioni-spese$/i.test(x);
-  const extra = [useless(rest) ? '' : rest, useless(name) ? '' : name, iban || ''].filter(Boolean);
+  const extra = (m.where != null ? [m.where] : [useless(rest) ? '' : rest, useless(name) ? '' : name, iban || '']).filter(Boolean);
   // nei bonifici ricevuti l'IBAN in colonna "Beneficiario" è il tuo, negli altri è quello della controparte
   const received = type === 'Bonifico ricevuto';
   return {

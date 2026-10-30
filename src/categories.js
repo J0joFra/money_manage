@@ -34,7 +34,10 @@ export function categoryType(name) {
 // [regex sul testo "payee note", categoria, sottocategoria, segno ('-' solo spese, '+' solo entrate, undefined entrambi), importo esatto (facoltativo)]
 export const RULES = [
   // famiglia: prima di tutte le altre regole
-  [/maria francalanci/i, 'Persone', 'Famiglia', '-'],
+  [/maria francalanci|francalanci maria/i, 'Persone', 'Famiglia', '-'],
+  [/maria francalanci|francalanci maria/i, 'Entrate', 'Da amici e famiglia', '+'],
+  // PayPal finanziato dalla banca: è un passaggio verso il conto PayPal, la spesa vera è nell'estratto PayPal
+  [/paypal europe s\.?a\.?r\.?l|\bpaypal \*?(?=[a-z]*\d)[0-9a-z]{8,}\b|^paypal\b(?! paga)|\bda paypal\b/i, 'Trasferimenti', 'Giroconto tra miei conti'],
   // ordini di pagamento ricorrenti da BBVA: 50 € risparmio mensile verso N26, 600 € verso Revolut (spese quotidiane)
   [/^ordine di pagamento\b/i, 'Trasferimenti', 'Investimenti e risparmi', '-', 50],
   [/^ordine di pagamento\b/i, 'Trasferimenti', 'Giroconto tra miei conti', '-', 600],
@@ -76,7 +79,7 @@ export const RULES = [
   [/serravalle|\bteem\b|\ba58\b|\bmiser\b/i, 'Trasporti', 'Pedaggi', '-'],
   [/cosmopark|milano parking/i, 'Trasporti', 'Parcheggio', '-'],
   [/autoscuola|scuola guida/i, 'Trasporti', 'Altro', '-'],
-  [/lastminute|bravonext|\bomio\b|civitatis|getyourguide|tiqets|travel|tourism|tourist|turisztikai|airport|groupe adp|\bcruises?\b/i, 'Viaggi', 'Attività', '-'],
+  [/lastminute|bravonext|\bomio\b|civitatis|getyourguide|tiqets|travel|tourism|tourist|turisztikai|airport|groupe adp|airpor|\bcruises?\b/i, 'Viaggi', 'Attività', '-'],
 
   // ristorazione
   [/autogrill|chef express|sarni|\bmy chef\b|area di servizio|\bads\b/i, 'Ristorazione', 'Autogrill', '-'],
@@ -146,6 +149,13 @@ export const RULES = [
 
   // altri esercenti riconoscibili (dopo le regole principali)
   [/\bwolt\b/i, 'Ristorazione', 'Delivery', '-'],
+  [/commissione prelievo/i, 'Finanza', 'Commissioni bancarie', '-'],
+  [/promozione commerciale|\bbonus\b/i, 'Entrate', 'Cashback', '+'],
+  [/accredito per trasferimento tra carte/i, 'Trasferimenti', 'Giroconto tra miei conti'],
+  [/rimborso carta/i, 'Entrate', 'Rimborsi', '+'],
+  [/arcadia|multiplex/i, 'Svago', 'Cinema e teatro', '-'],
+  [/stazione di\b/i, 'Trasporti', 'Treno', '-'],
+  [/google payment/i, 'Abbonamenti', 'Software e AI', '-'],
   [/glacier|ciambell|tartell|ladur[eé]e|kurtos/i, 'Ristorazione', 'Gelateria e dolci', '-'],
   [/focacc|burger|brasserie|bagel|kitchen|fusion|\bmomo\b|\bpub\b|cantini[eè]re|restaurant|\bfood\b|\bbeers?\b|woodstock|\bstube\b/i, 'Ristorazione', 'Ristorante', '-'],
   [/muzeum|\bmusea\b|mus[eé]e|gravensteen|autoworld|strahov|atomium/i, 'Svago', 'Musei e cultura', '-'],
@@ -176,13 +186,18 @@ export const RULES = [
 ];
 
 // Salvadanai e conti deposito dentro lo stesso conto: non sono né spese né entrate
-const INTERNAL = /^trasferimento\b|\btrasferimento · |\bsalvadanaio\b|conto deposito|(deposito|prelievo) risparmi|investimento - (deposito|prelievo)/i;
+// (sulla nota: "Trasferimento" deve essere il TIPO di operazione BBVA, non una causale scritta da te)
+const INTERNAL = /\bsalvadanaio\b|conto deposito|(deposito|prelievo) risparmi|investimento - (deposito|prelievo)/i;
+const INTERNAL_NOTE = /^trasferimento\b/i;
 
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
 // Un movimento verso/da una persona (nome tutto maiuscolo o "Nome Cognome" senza parole tipiche da negozio)
 function looksLikePerson(t) {
-  return /^Riferimento:/i.test(t.note || '') && !/srl|spa|s\.p\.a|s\.r\.l|europe|s\.a\.|ltd|gmbh/i.test(t.payee || '');
+  if (/srl|spa|s\.p\.a|s\.r\.l|europe|s\.a\.|ltd|gmbh|\bsas\b|\bsnc\b/i.test(t.payee || '')) return false;
+  if (/^Riferimento:/i.test(t.note || '')) return true;
+  // bonifici BBVA da/verso una persona: "Nome Cognome" (2-4 parole, solo lettere)
+  return /^Bonifico (eseguito|ricevuto)\b/i.test(t.note || '') && /^[A-Za-zÀ-ÿ']+( [A-Za-zÀ-ÿ']+){1,3}$/.test(t.payee || '');
 }
 
 /**
@@ -206,7 +221,12 @@ export function categorize(t, opts = {}) {
 
   // movimenti interni allo stesso conto (salvadanai BBVA, conto deposito Revolut): vengono prima del nome
   // del titolare perché nel PDF compaiono come trasferimenti "da/verso Joaquim Francalanci"
-  if (INTERNAL.test(text)) return { category: 'Trasferimenti', subcategory: 'Salvadanaio e conti deposito', source: 'auto' };
+  if (INTERNAL.test(text) || INTERNAL_NOTE.test(t.note || '')) return { category: 'Trasferimenti', subcategory: 'Salvadanaio e conti deposito', source: 'auto' };
+
+  // bonifico verso/da un IBAN dei tuoi conti
+  if (t.counterIban && (opts.ownIbans || []).includes(t.counterIban)) {
+    return { category: 'Trasferimenti', subcategory: 'Giroconto tra miei conti', source: 'auto' };
+  }
 
   const own = (opts.ownNames || []).map(norm).filter(Boolean);
   if (own.some((n) => payeeN === n || payeeN === n.split(' ').reverse().join(' '))) {

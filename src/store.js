@@ -38,7 +38,8 @@ export const newId = () => Date.now().toString(36) + (seq++).toString(36) + Math
 export function applyCategory(t, state) {
   if (t.catSource === 'manuale') return t;
   if (t.linkedId && t.catSource === 'abbinato') return t;
-  const c = categorize(t, { ownNames: state.settings.ownNames, userRules: state.rules });
+  const ownIbans = Object.values(state.accounts || {}).map((a) => a.iban).filter(Boolean);
+  const c = categorize(t, { ownNames: state.settings.ownNames, userRules: state.rules, ownIbans });
   return { ...t, category: c.category, subcategory: c.subcategory, catSource: c.source };
 }
 
