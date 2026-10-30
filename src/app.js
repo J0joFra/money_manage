@@ -7,7 +7,7 @@ import { load, save, addTransactions, applyCategory, linkTransfers, matchExistin
   CASH, cashBalance, accountFlows, counterpartAccount } from './store.js';
 
 // Aggiornare anche version.json: se il browser ha in cache una versione vecchia compare un avviso
-export const VERSION = '2026-10-30.7';
+export const VERSION = '2026-10-30.8';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -446,6 +446,7 @@ function renderOverview() {
   fillSelect($('#ov-year'), years.map((y) => [y, y]));
   const y = $('#ov-year').value;
   $('#ov-goal-year').textContent = y;
+  document.querySelectorAll('.ov-y').forEach((el) => (el.textContent = y));
   $('#ov-goal').value = yearGoals()[y] ?? '';
   $('#ov-table').innerHTML = months.length ? `<thead><tr>${head.map((h, i) => `<th${i && i !== 9 && i !== 12 ? ' style="text-align:right"' : ''}>${h}</th>`).join('')}</tr></thead>
     ${[y].map((y) => {
@@ -464,6 +465,30 @@ function renderOverview() {
 }
 
 $('#ov-year').addEventListener('change', renderOverview);
+
+// CSV dell'anno scelto: i movimenti (stesso formato dell'export) e la tabella mese per mese
+$('#ov-csv-tx').addEventListener('click', () => {
+  const y = $('#ov-year').value;
+  const txs = state.transactions.filter((t) => t.date.startsWith(y)).sort((a, b) => a.date.localeCompare(b.date));
+  download(`movimenti_${y}.csv`, toCsv(txs), 'text/csv');
+});
+$('#ov-csv-table').addEventListener('click', () => {
+  const y = $('#ov-year').value;
+  // formato per Excel in italiano: separatore ";" e virgola decimale
+  const num = (v) => (v == null || !Number.isFinite(v) ? '' : v.toFixed(2).replace('.', ','));
+  const rate = (v) => (v == null || !Number.isFinite(v) ? '' : `${(v * 100).toFixed(2).replace('.', ',')}%`);
+  const months = monthlyOverview().filter((m) => m.ym.startsWith(y));
+  const head = ['Data', 'Entrate', 'Uscite', 'Totale', 'Risparmio %', 'Salario', 'Trend mensile %', 'Saldo cumulativo',
+    'Incidenza Salario %', 'Risparmio minimo', 'Saldo', 'Obiettivo raggiunto', 'Investimento'];
+  const rows = months.map((m) => [
+    `${MONTH_NAMES[Number(m.ym.slice(5)) - 1]} ${y}`, num(m.income), num(m.expenses), num(m.total), rate(m.savingRate), num(m.salary),
+    rate(m.trend), num(m.cumulative), rate(m.salaryShare), m.savingRate == null ? '' : m.minOk ? 'Ok' : 'No', num(m.balance),
+    m.goalReached == null ? '' : m.goalReached ? 'Sì' : 'No', num(m.invested > 0.005 ? m.invested : 0),
+  ]);
+  const goal = yearGoals()[y];
+  const csv = [head, ...rows, [], ['Obiettivo di saldo', num(goal)]].map((r) => r.join(';')).join('\n');
+  download(`overview_${y}.csv`, '\uFEFF' + csv + '\n', 'text/csv');
+});
 $('#ov-goal').addEventListener('change', (e) => {
   const y = $('#ov-year').value;
   state.yearGoals = yearGoals();
