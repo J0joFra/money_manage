@@ -166,3 +166,13 @@ svg.flows .node .bl { font-size: 13px; fill: var(--text-2); font-variant-numeric
 .update-bar { background: var(--accent); color: #fff; padding: 8px 16px; text-align: center; }
 .update-bar .link { color: #fff; text-decoration: underline; }
 .top h1 small { font-size: 11px; font-weight: 400; }
+
+table.pivot { font-size: 13px; white-space: nowrap; }
+table.pivot th { position: sticky; top: 0; background: var(--surface); white-space: normal; min-width: 70px; vertical-align: bottom; }
+table.pivot tr[data-month] { cursor: pointer; }
+table.pivot tr[data-month]:hover td { background: var(--surface-2); }
+table.pivot tr.sel td { background: var(--accent-soft); }
+table.pivot tr.year td { font-weight: 700; background: var(--surface-2); border-top: 2px solid var(--border); }
+.badge { display: inline-block; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge.ok { background: var(--accent-soft); color: var(--pos); }
+.badge.ko { background: var(--surface-2); color: var(--text-2); }

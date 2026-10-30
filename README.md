@@ -6,6 +6,9 @@ App web gratuita e personale per tenere traccia delle spese partendo dagli estra
   nel formato `Amount,Date,Note,Payee,Currency`
 - **Categorie dettagliate** (categoria › sottocategoria) assegnate automaticamente
 - **Impara da te**: quando correggi una categoria puoi creare una regola per quel beneficiario
+- **Overview**: tabella mese per mese raggruppata per anno (più recente in alto) con entrate, uscite, totale,
+  risparmio %, salario, trend, saldo cumulativo, incidenza del salario, risparmio minimo, saldo dei conti,
+  obiettivo e investimenti; cliccando un mese si vedono i suoi movimenti
 - **Riepilogo**: spese per categoria e sottocategoria, andamento mensile, dove spendi di più
 - **Privacy**: tutto gira nel browser, i PDF e i dati non vengono mai inviati a un server
   (sono salvati nel `localStorage` del browser: fai il backup da *Impostazioni*)

@@ -7,7 +7,7 @@ import { load, save, addTransactions, applyCategory, linkTransfers, matchExistin
   CASH, cashBalance, accountFlows, counterpartAccount } from './store.js';
 
 // Aggiornare anche version.json: se il browser ha in cache una versione vecchia compare un avviso
-export const VERSION = '2026-10-30.4';
+export const VERSION = '2026-10-30.5';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -343,10 +343,146 @@ function catSourceLabel(t) {
   return 'automatica';
 }
 
+// ---------- OVERVIEW: tabella mese per mese ----------
+const MONTH_NAMES = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+const pct = (v) => (v == null || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(2).replace('.', ',')}%`);
+
+// Saldo di tutti i conti alla fine di un giorno: saldo di oggi meno i movimenti successivi.
+// Un conto conta solo da quando ne hai importato lo storico (prima non si può sapere quanto c'era).
+function totalBalanceAt(endDate, balances) {
+  let total = 0;
+  const missing = [];
+  for (const [acc, b] of balances) {
+    if (b.pocket) {
+      // tasca: i trasferimenti verso la tasca sono uscite sul conto principale
+      const parent = acc.split(' · ')[0];
+      const after = state.transactions.filter((t) => t.account === parent && t.date > endDate && counterpartAccount(t, state) === acc);
+      total += b.available + after.reduce((s, t) => s + t.amount, 0);
+    } else if (b.cash) {
+      if (b.date && endDate < b.date) continue; // prima che impostassi il saldo contanti non lo conosciamo
+      total += b.available;
+    } else {
+      const own = state.transactions.filter((t) => t.account === acc);
+      const first = own.reduce((d, t) => (!d || t.date < d ? t.date : d), '');
+      if (!first || endDate < first.slice(0, 7) + '-01') { if (!b.manual) missing.push(acc); continue; }
+      const after = own.filter((t) => t.date > endDate);
+      total += b.available - after.reduce((s, t) => s + t.amount, 0);
+    }
+  }
+  return { total, missing };
+}
+
+function monthlyOverview() {
+  const minSaving = state.settings.minSaving ?? 0.2;
+  const byMonth = new Map();
+  for (const t of state.transactions) {
+    const ym = t.date.slice(0, 7);
+    const m = byMonth.get(ym) || { ym, income: 0, expenses: 0, salary: 0, invested: 0 };
+    const type = categoryType(t.category);
+    if (type === 'income') m.income += t.amount;
+    if (type === 'expense') m.expenses -= t.amount;
+    if (t.subcategory === 'Stipendio') m.salary += t.amount;
+    if (t.subcategory === 'Investimenti e risparmi' || t.subcategory === 'Salvadanaio e conti deposito') m.invested -= t.amount;
+    byMonth.set(ym, m);
+  }
+  const months = [...byMonth.values()].sort((a, b) => a.ym.localeCompare(b.ym));
+  const balances = currentBalances();
+  let cumulative = 0;
+  let goal = null;
+  let prev = null;
+  for (const m of months) {
+    m.total = m.income - m.expenses;
+    // con entrate quasi nulle (es. 0,03 € di interessi) la percentuale non ha senso
+    m.savingRate = m.income >= 1 ? m.total / m.income : null;
+    m.trend = prev && prev.expenses ? (m.expenses - prev.expenses) / prev.expenses : null;
+    cumulative += m.total;
+    m.cumulative = cumulative;
+    m.salaryShare = m.salary ? m.expenses / m.salary : null;
+    m.minOk = m.savingRate != null && m.savingRate >= minSaving;
+    const bal = balances.length ? totalBalanceAt(`${m.ym}-31`, balances) : null;
+    m.balance = bal?.total ?? null;
+    m.balanceMissing = bal?.missing || [];
+    if (state.goals?.[m.ym] != null) goal = state.goals[m.ym];
+    m.goal = goal;
+    m.goalReached = goal != null && m.balance != null ? m.balance >= goal : null;
+    prev = m;
+  }
+  return months.reverse();
+}
+
+function renderOverview() {
+  $('#ov-min').value = Math.round((state.settings.minSaving ?? 0.2) * 100);
+  const months = monthlyOverview();
+  const head = ['Data', 'Entrate', 'Uscite', 'Totale', 'Risparmio %', 'Salario', 'Trend mensile %', 'Saldo cumulativo',
+    'Incidenza Salario %', 'Risparmio minimo', 'Saldo', 'Obiettivo', 'Obiettivo raggiunto', 'Investimento'];
+  const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
+  const yesNo = (v, yes = 'Sì', no = 'No') => (v == null ? '—' : `<span class="badge ${v ? 'ok' : 'ko'}">${v ? yes : no}</span>`);
+  const row = (m) => `<tr data-month="${m.ym}" class="${$('#f-period').value === m.ym ? 'sel' : ''}">
+    <td class="date">${MONTH_NAMES[Number(m.ym.slice(5)) - 1]} ${m.ym.slice(0, 4)}</td>
+    <td class="num pos">${eur(m.income)}</td>
+    <td class="num neg">${eur(m.expenses)}</td>
+    <td class="num ${cls(m.total)}">${eur(m.total)}</td>
+    <td class="num ${cls(m.savingRate)}">${pct(m.savingRate)}</td>
+    <td class="num">${m.salary ? eur(m.salary) : '—'}</td>
+    <td class="num ${m.trend == null ? '' : m.trend > 0 ? 'neg' : 'pos'}">${m.trend == null ? '—' : (m.trend > 0 ? '+' : '') + pct(m.trend)}</td>
+    <td class="num ${cls(m.cumulative)}">${eur(m.cumulative)}</td>
+    <td class="num">${pct(m.salaryShare)}</td>
+    <td>${m.savingRate == null ? '—' : yesNo(m.minOk, 'Ok', 'No')}</td>
+    <td class="num"${m.balanceMissing.length ? ` title="Esclusi (storico non importato): ${esc(m.balanceMissing.join(', '))}"` : ''}>${m.balance == null ? '—' : eur(m.balance)}${m.balanceMissing.length ? '<sup>*</sup>' : ''}</td>
+    <td class="num"><button class="link" data-goal="${m.ym}" title="Imposta l'obiettivo da questo mese in poi">${m.goal == null ? 'imposta' : eur(m.goal)}</button></td>
+    <td>${yesNo(m.goalReached)}</td>
+    <td>${m.invested > 0.005 ? `<span class="badge ok">Sì</span> <span class="muted">${eur(m.invested)}</span>` : '<span class="badge ko">No</span>'}</td>
+  </tr>`;
+  // raggruppato per anno, con una riga di totale per anno
+  const years = [...new Set(months.map((m) => m.ym.slice(0, 4)))];
+  $('#ov-table').innerHTML = months.length ? `<thead><tr>${head.map((h, i) => `<th${i && i !== 9 && i < 12 ? ' style="text-align:right"' : ''}>${h}</th>`).join('')}</tr></thead>
+    ${years.map((y) => {
+      const ms = months.filter((m) => m.ym.startsWith(y));
+      const inc = ms.reduce((s, m) => s + m.income, 0);
+      const exp = ms.reduce((s, m) => s + m.expenses, 0);
+      const sal = ms.reduce((s, m) => s + m.salary, 0);
+      const inv = ms.reduce((s, m) => s + m.invested, 0);
+      return `<tbody><tr class="year"><td>${y}</td><td class="num pos">${eur(inc)}</td><td class="num neg">${eur(exp)}</td>
+        <td class="num ${cls(inc - exp)}">${eur(inc - exp)}</td><td class="num">${pct(inc ? (inc - exp) / inc : null)}</td>
+        <td class="num">${sal ? eur(sal) : '—'}</td><td></td><td class="num">${eur(ms[0].cumulative)}</td>
+        <td class="num">${pct(sal ? exp / sal : null)}</td><td></td><td class="num">${ms[0].balance == null ? '—' : eur(ms[0].balance)}</td><td></td><td></td>
+        <td class="num">${inv > 0.005 ? eur(inv) : ''}</td></tr>${ms.map(row).join('')}</tbody>`;
+    }).join('')}` : '<tr><td class="empty">Nessun movimento importato</td></tr>';
+}
+
+$('#ov-min').addEventListener('change', (e) => {
+  state.settings.minSaving = Math.max(0, Number(e.target.value) || 0) / 100;
+  persist();
+  renderOverview();
+});
+$('#ov-table').addEventListener('click', (e) => {
+  const g = e.target.closest('[data-goal]');
+  if (g) {
+    const ym = g.dataset.goal;
+    const cur = monthlyOverview().find((m) => m.ym === ym)?.goal;
+    const v = prompt(`Obiettivo di saldo da ${MONTH_NAMES[Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)} in poi (vuoto per toglierlo):`, cur ?? '');
+    if (v === null) return;
+    state.goals = state.goals || {};
+    if (v.trim() === '') delete state.goals[ym];
+    else if (!Number.isNaN(Number(v.replace(',', '.')))) state.goals[ym] = Number(v.replace(',', '.'));
+    persist();
+    renderOverview();
+    return;
+  }
+  const r = e.target.closest('tr[data-month]');
+  if (!r) return;
+  $('#f-period').value = $('#f-period').value === r.dataset.month ? '' : r.dataset.month;
+  renderList();
+  $('#list-title').scrollIntoView({ behavior: 'smooth' });
+});
+
 function renderList() {
   renderListFilters();
+  renderOverview();
   const list = filteredList();
   const total = list.reduce((s, t) => s + (categoryType(t.category) === 'transfer' ? 0 : t.amount), 0);
+  const p = $('#f-period').value;
+  $('#list-title').textContent = p ? `Movimenti di ${p.length === 7 ? `${MONTH_NAMES[Number(p.slice(5)) - 1]} ${p.slice(0, 4)}` : p}` : 'Tutti i movimenti';
   $('#list-count').textContent = `${list.length} movimenti · saldo (esclusi trasferimenti): ${eur(total)}`;
   $('#list-table').innerHTML = list.length
     ? `<thead><tr><th>Data</th><th>Beneficiario</th><th>Categoria</th><th style="text-align:right">Importo</th><th></th></tr></thead>

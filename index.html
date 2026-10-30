@@ -14,7 +14,7 @@
     <h1>💶 Le mie spese <small id="version" class="muted"></small></h1>
     <nav id="tabs">
       <button data-tab="summary" class="active">Riepilogo</button>
-      <button data-tab="list">Movimenti</button>
+      <button data-tab="list">Overview</button>
       <button data-tab="import">Importa</button>
       <button data-tab="accounts">Conti</button>
       <button data-tab="rules">Regole</button>
@@ -54,6 +54,16 @@
 
     <!-- MOVIMENTI -->
     <section id="tab-list" class="tab">
+      <div class="card">
+        <h2>Overview mese per mese</h2>
+        <p class="hint">Giroconti, salvadanai e investimenti non contano né come entrate né come uscite. Clicca un mese per vederne i movimenti qui sotto.
+          Saldo = soldi su tutti i conti a fine mese (* = esclusi i conti di cui non hai importato lo storico di quel periodo: passa sopra la cella per vederli). L'obiettivo vale dal mese in cui lo imposti in poi (clicca sulla cella per cambiarlo).</p>
+        <div class="toolbar">
+          <label>Risparmio minimo <input id="ov-min" type="number" min="0" max="100" step="1" style="width:70px"> %</label>
+        </div>
+        <div class="table-wrap"><table class="tx pivot" id="ov-table"></table></div>
+      </div>
+      <h2 id="list-title" class="mt">Movimenti</h2>
       <div class="toolbar">
         <input id="f-search" type="search" placeholder="Cerca beneficiario o nota…">
         <select id="f-period"></select>
