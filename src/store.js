@@ -205,7 +205,10 @@ export function counterpartAccount(t, state) {
   if (t.subcategory === SAVINGS) return `${t.account} · salvadanaio`;
   if (/^conversione in [a-z]{3}\b|exchanged to/i.test(t.payee)) return `${t.account} · altre valute`;
   if (t.counterIban) {
-    const hit = Object.entries(state.accounts || {}).find(([name, a]) => a.iban && a.iban === t.counterIban && name !== t.account);
+    // IBAN mascherato (Satispay: "IT*****3385"): basta che coincidano paese e ultime cifre
+    const masked = t.counterIban.match(/^([A-Z]{2})?\*+(\d+)$/);
+    const same = (iban) => (masked ? iban.endsWith(masked[2]) && (!masked[1] || iban.startsWith(masked[1])) : iban === t.counterIban);
+    const hit = Object.entries(state.accounts || {}).find(([name, a]) => a.iban && same(a.iban) && name !== t.account);
     if (hit) return hit[0];
   }
   if (t.subcategory === 'Prelievo contanti') return CASH;

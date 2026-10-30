@@ -34,11 +34,22 @@ ${[['15/12', 'BONIFICI<br>ACCREDITO COMPETENZE MESE DI', '1.500,00', '2.500,00']
    ['20/02', 'TRASFERIMENTO PROGRAMMA IL TUO<br>CONTO<br>OPERAZIONE SALDO MASSIMO<br>SALVADANAIO', '-32,10', '2.000,00'],
   ].map(([d, c, a, s]) => `<tr><td style="vertical-align:middle">${d}</td><td style="vertical-align:middle">${d}</td><td style="width:200px">${c}</td><td class=r style="vertical-align:middle">${a}</td><td class=r style="vertical-align:middle">${s}</td></tr>`).join('')}
 </table><p>Saldo fine trimestre: 2.000,00 (EUR)</p>`,
+  // layout reale della "Lista Transazioni" di Satispay
+  satispay_lista: `<div style="text-align:right">Mario Rossi<br>LU000000SATI00000000</div><h3>Lista Transazioni</h3>
+<p>Dal 1 gennaio 2026 al 31 dicembre 2026</p><p>Generato il 30 ottobre 2026</p>
+<table style="font-size:8px"><tr><th>Data</th><th>Transazione</th><th>Importo</th><th>Tipo</th><th>Disponibilità</th><th>Disponibilità dopo la transazione</th><th>ID</th></tr>
+${[['20 ott 2026', '14:00', 'Bar Sport', '', '-2,50 €', 'a un Negozio', 'In corso', '37,50 €'],
+   ['18 ott 2026', '12:00', 'Pizzeria Da Gino', '', '-9,00 €', 'a un Negozio', 'Annullato', '40,00 €'],
+   ['15 ott 2026', '18:11', 'Hai trasferito denaro dalla tua', 'Disponibilità Satispay verso il tuo conto bancario.', '-60,00 €', 'Verso la Banca', 'Approvato', '40,00 €'],
+   ['2 ott 2026', '17:37', 'Ricarica Satispay', 'Da (IT*****1234)', '100,00 €', 'Dalla Banca', 'Approvato', '100,00 €'],
+  ].map(([d, h, t1, t2, a, ty, st, after]) => `<tr><td>${d}<br>${h}</td><td>${t1}<br>${t2}</td><td>${a}</td><td>${ty}<br>${st}</td><td>${a}</td><td>${after}</td><td>id-${d.replace(/ /g, '')}</td></tr>`).join('')}
+</table><p style="margin-top:300px">Satispay Europe S.A.</p><p>Legenda</p>`,
 };
 const expected = {
   n26: 'Amount,Date,Note,Payee,Currency\n-23.45,2026-10-02,,Esselunga,EUR\n30,2026-10-05,,Mario Bianchi,EUR\n-13.99,2026-10-10,,Netflix,EUR\n',
   bbva: 'Amount,Date,Note,Payee,Currency\n-45,2026-10-03,,ENI STATION MILANO,EUR\n20,2026-10-07,,LUCA VERDI,EUR\n-1012.3,2026-10-15,,FARMACIA CENTRALE,EUR\n',
   bbva_trimestrale: 'Amount,Date,Note,Payee,Currency\n1500,2025-12-15,,Accredito competenze,EUR\n-120,2025-12-20,,AGOS DUCATO S.P.A.,EUR\n2.1,2026-01-02,,Liquidazione interessi e spese,EUR\n-300,2026-01-10,,Bonifico,EUR\n-50,2026-01-12,,Ordine di pagamento,EUR\n-32.1,2026-02-20,,Salvadanaio,EUR\n',
+  satispay_lista: 'Amount,Date,Note,Payee,Currency\n-2.5,2026-10-20,,Bar Sport,EUR\n-60,2026-10-15,,Verso il conto bancario,EUR\n100,2026-10-02,,Ricarica Satispay,EUR\n',
   satispay: 'Amount,Date,Note,Payee,Currency\n-1.5,2026-10-04,,Bar Centrale,EUR\n100,2026-10-06,,Ricarica,EUR\n-8,2026-10-09,,Anna Neri,EUR\n',
 };
 (async () => {

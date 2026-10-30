@@ -45,6 +45,7 @@ export const RULES = [
   [/conto di investimento|salvadanaio|spazio|pocket|vault|trade republic|scalable|directa|fineco|degiro|moneyfarm/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/^conversione in [a-z]{3}\b|exchanged to/i, 'Trasferimenti', 'Giroconto tra miei conti'], // cambio valuta tra i tuoi conti Revolut
   [/^commissione revolut\b/i, 'Finanza', 'Commissioni bancarie', '-'],
+  [/verso il conto bancario|verso la banca/i, 'Trasferimenti', 'Giroconto tra miei conti'], // Satispay -> banca
   [/\btrasf\b/i, 'Trasferimenti', 'Giroconto tra miei conti'], // causale che usi per i giroconti
   // "ATM" è anche l'Azienda Trasporti Milanesi: va riconosciuta prima dei prelievi
   [/azienda trasporti milanesi|atm milan|ticket atm/i, 'Trasporti', 'Mezzi pubblici', '-'],
@@ -160,6 +161,12 @@ export const RULES = [
   [/ferrament/i, 'Casa', 'Fai da te e ferramenta', '-'],
   [/tesco|g20 supermarch|orseldis/i, 'Alimentari', 'Supermercato', '-'],
 
+  // tipi di movimento Satispay (nella nota)
+  [/· a una persona\b|· regalo inviato/i, 'Persone', 'Amici', '-'],
+  [/· da una persona\b|· regalo ricevuto/i, 'Entrate', 'Da amici e famiglia', '+'],
+  [/· (punti|premio)\b/i, 'Entrate', 'Cashback', '+'],
+  [/· bollettino/i, 'Bollette', 'Altro', '-'],
+
   // entrate
   [/ogury|accredito competenze|stipendio|emolumenti|salary|busta paga/i, 'Entrate', 'Stipendio', '+'],
   [/rimborso|refund|storno/i, 'Entrate', 'Rimborsi', '+'],
@@ -169,7 +176,7 @@ export const RULES = [
 ];
 
 // Salvadanai e conti deposito dentro lo stesso conto: non sono né spese né entrate
-const INTERNAL = /^trasferimento\b|\btrasferimento · |\bsalvadanaio\b|conto deposito/i;
+const INTERNAL = /^trasferimento\b|\btrasferimento · |\bsalvadanaio\b|conto deposito|(deposito|prelievo) risparmi|investimento - (deposito|prelievo)/i;
 
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 

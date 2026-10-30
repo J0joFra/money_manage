@@ -42,8 +42,9 @@ Per usarla dal telefono si può pubblicare gratis con **GitHub Pages**
 |----------|-------|
 | Revolut  | ✅ testato su un estratto conto reale (movimenti in sospeso inclusi, stornati esclusi) |
 | N26      | ✅ testato su un estratto reale ("Estratto conto preliminare" mensile) |
-| Satispay | 🟡 parser basato sul layout tipico, da verificare con un estratto reale |
+| Satispay | ✅ testato su un estratto reale ("Lista Transazioni" da Esporta report: controllo disponibilità, annullati esclusi, "In corso" in sospeso) |
 | BBVA     | ✅ testato su estratti reali: "Estratto conto trimestrale" (con controllo saldi) e "Ultimi movimenti" dall'app (max 6 mesi, con beneficiario e IBAN) |
+| PayPal   | ⏳ in attesa di un estratto di esempio |
 | Altre    | parser generico: riconosce righe con data + descrizione + importo |
 
 Se un estratto non viene letto bene, nella schermata *Importa* c'è **"Mostra testo estratto"**:
