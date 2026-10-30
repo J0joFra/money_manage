@@ -5,7 +5,8 @@ import { categorize } from './categories.js';
 const KEY = 'spese.v1';
 
 // balances: { [conto]: { date, booked, pending, available } } saldo letto dall'ultimo estratto conto
-const empty = () => ({ transactions: [], rules: [], balances: {}, settings: { ownNames: [] } });
+// notDuplicates: coppie di id "a|b" che l'utente ha indicato come movimenti diversi
+const empty = () => ({ transactions: [], rules: [], balances: {}, notDuplicates: [], settings: { ownNames: [] } });
 
 export function load() {
   try {
@@ -28,12 +29,6 @@ export function save(state) {
   }
 }
 
-const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-export function dedupKey(t) {
-  return [t.account, t.date, Number(t.amount).toFixed(2), norm(t.payee), norm(t.note)].join('|');
-}
-
 let seq = 0;
 export const newId = () => Date.now().toString(36) + (seq++).toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -44,35 +39,102 @@ export function applyCategory(t, state) {
   return { ...t, category: c.category, subcategory: c.subcategory, catSource: c.source };
 }
 
+// Chiave per riconoscere lo stesso movimento importato da estratti diversi: conto + data + importo.
+// Beneficiario e nota NON ne fanno parte perché cambiano da un formato all'altro
+// (es. BBVA trimestrale "Ordine di pagamento" = esportazione app "REVOLUT JO").
+export function dedupKey(t) {
+  return [t.account, t.date, Number(t.amount).toFixed(2)].join('|');
+}
+
+// Beneficiari "generici" che vale la pena sostituire con quelli di un estratto più dettagliato
+const GENERIC_PAYEE = /^(bonifico|ordine di pagamento|addebito diretto|pagamento carta|trasferimento|operazione)$/i;
+const HAS_IBAN = /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/;
+// il nuovo movimento descrive meglio quello salvato? (beneficiario generico, oppure ora c'è anche l'IBAN)
+const moreDetailed = (n, o) => (GENERIC_PAYEE.test(o.payee) && !GENERIC_PAYEE.test(n.payee)) ||
+  (HAS_IBAN.test(n.note || '') && !HAS_IBAN.test(o.note || ''));
+
 /**
- * Aggiunge movimenti saltando i duplicati (stesso conto, data, importo, beneficiario, nota).
- * Movimenti identici nello stesso import (es. due caffè uguali lo stesso giorno) vengono tenuti entrambi.
- * Un movimento "in sospeso" già presente viene confermato quando ricompare.
+ * Confronta i movimenti da importare con quelli salvati. Movimenti identici nello stesso estratto
+ * (es. due caffè uguali lo stesso giorno) vengono contati: se ne aggiungono solo quelli in più.
+ * Restituisce per ogni movimento il gemello già salvato (o null).
  */
-export function addTransactions(state, txs) {
+export function matchExisting(state, txs) {
   const existing = new Map();
   for (const t of state.transactions) {
     const k = dedupKey(t);
     existing.set(k, [...(existing.get(k) || []), t]);
   }
   const seen = new Map();
-  let added = 0;
-  let skipped = 0;
-  for (const t of txs) {
+  return txs.map((t) => {
     const k = dedupKey(t);
     const n = (seen.get(k) || 0) + 1;
     seen.set(k, n);
-    const matches = existing.get(k) || [];
-    if (matches.length >= n) {
-      if (!t.pending && matches[n - 1].pending) delete matches[n - 1].pending;
-      skipped++;
-      continue;
+    return (existing.get(k) || [])[n - 1] || null;
+  });
+}
+
+/**
+ * Aggiunge i movimenti nuovi e salta quelli già presenti. Di un movimento già presente:
+ * - conferma quello "in sospeso" quando ricompare contabilizzato
+ * - sostituisce un beneficiario generico con quello più dettagliato del nuovo estratto
+ */
+export function addTransactions(state, txs) {
+  const twins = matchExisting(state, txs);
+  let added = 0;
+  let skipped = 0;
+  let improved = 0;
+  txs.forEach((t, i) => {
+    const old = twins[i];
+    if (!old) {
+      state.transactions.push({ id: newId(), ...t });
+      added++;
+      return;
     }
-    state.transactions.push({ id: newId(), ...t });
-    added++;
-  }
+    skipped++;
+    if (!t.pending && old.pending) delete old.pending;
+    if (moreDetailed(t, old)) {
+      Object.assign(old, { payee: t.payee, note: t.note });
+      Object.assign(old, applyCategory(old, state));
+      improved++;
+    }
+  });
   state.transactions.sort((a, b) => b.date.localeCompare(a.date));
-  return { added, skipped };
+  return { added, skipped, improved };
+}
+
+/**
+ * Possibili doppioni già salvati: stesso conto e stesso importo, date a pochi giorni di distanza,
+ * provenienti da file diversi (o importati prima che l'app salvasse la provenienza).
+ * Le coppie segnate come "non sono doppioni" vengono ignorate.
+ */
+export function findSavedDuplicates(state, maxDays = 3) {
+  const ignored = new Set(state.notDuplicates || []);
+  const groups = new Map();
+  for (const t of state.transactions) {
+    const k = `${t.account}|${Number(t.amount).toFixed(2)}`;
+    groups.set(k, [...(groups.get(k) || []), t]);
+  }
+  const pairs = [];
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => a.date.localeCompare(b.date));
+    const used = new Set();
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+        if ((Date.parse(b.date) - Date.parse(a.date)) / 86400000 > maxDays) break;
+        if (used.has(a.id) || used.has(b.id)) continue;
+        if (a.source && b.source && a.source === b.source) continue; // stesso estratto: movimenti distinti
+        if (a.linkedId === b.id) continue;
+        if (ignored.has([a.id, b.id].sort().join('|'))) continue;
+        pairs.push([a, b]);
+        used.add(a.id);
+        used.add(b.id);
+      }
+    }
+  }
+  return pairs.sort((x, y) => y[0].date.localeCompare(x[0].date));
 }
 
 // Categorie che possono essere "sostituite" da un giroconto riconosciuto per abbinamento

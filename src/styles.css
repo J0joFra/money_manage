@@ -144,3 +144,11 @@ dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 13px;
   main { padding: 12px 16px; }
   table.tx .hide-sm { display: none; }
 }
+
+tr.dup td { opacity: .45; }
+dialog:has(.dups) { max-width: 720px; }
+.dups { max-height: 80vh; overflow: auto; }
+.dup-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.dup-pair > button { grid-column: 1 / -1; justify-self: start; }
+.dup-side { background: var(--surface-2); border-radius: 8px; padding: 8px; font-size: 13px; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .dup-pair { grid-template-columns: 1fr; } }

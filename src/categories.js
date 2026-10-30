@@ -21,7 +21,7 @@ export const CATEGORIES = [
   { name: 'Donazioni', type: 'expense', icon: '💝', subs: ['Beneficenza', 'Altro'] },
   { name: 'Animali', type: 'expense', icon: '🐾', subs: ['Cibo', 'Veterinario', 'Altro'] },
   { name: 'Entrate', type: 'income', icon: '💰', subs: ['Stipendio', 'Rimborsi', 'Da amici e famiglia', 'Vendite', 'Interessi e dividendi', 'Cashback', 'Altro'] },
-  { name: 'Trasferimenti', type: 'transfer', icon: '🔄', subs: ['Giroconto tra miei conti', 'Ricarica Satispay', 'Investimenti e risparmi', 'Prelievo contanti', 'Altro'] },
+  { name: 'Trasferimenti', type: 'transfer', icon: '🔄', subs: ['Giroconto tra miei conti', 'Ricarica Satispay', 'Salvadanaio e conti deposito', 'Investimenti e risparmi', 'Prelievo contanti', 'Altro'] },
   { name: 'Da categorizzare', type: 'expense', icon: '❓', subs: ['Altro'] },
 ];
 
@@ -40,11 +40,9 @@ export const RULES = [
   [/ricarica (dell'app )?satispay|satispay europe/i, 'Trasferimenti', 'Ricarica Satispay'],
   [/^ricarica\b|ricarica da (iban|carta|conto)/i, 'Trasferimenti', 'Ricarica Satispay', '+'],
   [/^(revolut|n26|bbva|satispay)\b/i, 'Trasferimenti', 'Giroconto tra miei conti'],
-  [/\btrasferimento · |\bsalvadanaio\b/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/conto di investimento|salvadanaio|spazio|pocket|vault|trade republic|scalable|directa|fineco|degiro|moneyfarm/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/^conversione in [a-z]{3}\b|exchanged to/i, 'Trasferimenti', 'Giroconto tra miei conti'], // cambio valuta tra i tuoi conti Revolut
   [/^commissione revolut\b/i, 'Finanza', 'Commissioni bancarie', '-'],
-  [/conto deposito/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/\btrasf\b/i, 'Trasferimenti', 'Giroconto tra miei conti'], // causale che usi per i giroconti
   // "ATM" è anche l'Azienda Trasporti Milanesi: va riconosciuta prima dei prelievi
   [/azienda trasporti milanesi|atm milan|ticket atm/i, 'Trasporti', 'Mezzi pubblici', '-'],
@@ -67,7 +65,7 @@ export const RULES = [
   [/\buber\b|free ?now|\btaxi\b|itaxi|\bncc\b|\bbolt\b/i, 'Trasporti', 'Taxi e NCC', '-'],
   [/\benjoy\b|share now|car2go|\blime\b|\bdott\b|\btier\b|\bbird\b|bikemi|mimoto|cooltra|\bzity\b/i, 'Trasporti', 'Sharing (auto, bici, monopattini)', '-'],
   [/ryanair|easyjet|wizz|ita airways|vueling|volotea|lufthansa|aeroport/i, 'Viaggi', 'Voli', '-'],
-  [/meccanic|gommist|officina|autoricambi|norauto|carrozzeria/i, 'Trasporti', 'Manutenzione auto', '-'],
+  [/meccanic|\bgarage\b|autofficin|gommist|officina|autoricambi|norauto|carrozzeria/i, 'Trasporti', 'Manutenzione auto', '-'],
 
   // trasporti esteri e servizi di viaggio
   [/\bratp\b|\bstib\b|de lijn|\bdpp\b|\bbkk\b|budapestgo|pay&go|\bm[1-5]\b|\btramv?\b|autostazioni/i, 'Trasporti', 'Mezzi pubblici', '-'],
@@ -137,7 +135,7 @@ export const RULES = [
 
   // assicurazioni e PA
   [/prima assicurazioni|prima\.it|genertel|\blinear\b|\bverti\b|allianz|unipol|generali|zurich|\baxa\b|conte\.it|quixa|assicuraz/i, 'Assicurazioni', 'Auto', '-'],
-  [/pagopa|agenzia entrate|f24|comune di|inps|\baci\b|motorizzazione/i, 'Tasse e PA', 'PagoPA', '-'],
+  [/pagopa|agenzia (delle )?entrate|f24|comune di|inps|\baci\b|motorizzazione/i, 'Tasse e PA', 'PagoPA', '-'],
   [/multa|sanzione|contravvenzion/i, 'Tasse e PA', 'Multe', '-'],
 
   // persone
@@ -149,7 +147,7 @@ export const RULES = [
   [/focacc|burger|brasserie|bagel|kitchen|fusion|\bmomo\b|\bpub\b|cantini[eè]re|restaurant|\bfood\b|\bbeers?\b|woodstock|\bstube\b/i, 'Ristorazione', 'Ristorante', '-'],
   [/muzeum|\bmusea\b|mus[eé]e|gravensteen|autoworld|strahov|atomium/i, 'Svago', 'Musei e cultura', '-'],
   [/instant gaming|\bg2a\b|kinguin|gamer2gamer|\bg2g\b|bo+wling|\blego\b/i, 'Svago', 'Giochi e videogiochi', '-'],
-  [/playtomic|sportit/i, 'Svago', 'Sport', '-'],
+  [/playtomic|sportit|volley|pallavolo|basket/i, 'Svago', 'Sport', '-'],
   [/liveticket|live ticket|dropticket/i, 'Svago', 'Eventi e concerti', '-'],
   [/twitch|google play|capcut|fiverr|register\.?it|registerspa/i, 'Abbonamenti', 'Software e AI', '-'],
   [/fanatics|piazza italia|cotton|casual store/i, 'Shopping', 'Abbigliamento', '-'],
@@ -161,12 +159,15 @@ export const RULES = [
   [/tesco|g20 supermarch|orseldis/i, 'Alimentari', 'Supermercato', '-'],
 
   // entrate
-  [/accredito competenze|stipendio|emolumenti|salary|busta paga/i, 'Entrate', 'Stipendio', '+'],
+  [/ogury|accredito competenze|stipendio|emolumenti|salary|busta paga/i, 'Entrate', 'Stipendio', '+'],
   [/rimborso|refund|storno/i, 'Entrate', 'Rimborsi', '+'],
   [/cashback/i, 'Entrate', 'Cashback', '+'],
   [/interessi|dividend/i, 'Entrate', 'Interessi e dividendi', '+'],
-  [/vinted|subito\.it|ebay/i, 'Entrate', 'Vendite', '+'],
+  [/mangopay|vinted|subito\.it|ebay/i, 'Entrate', 'Vendite', '+'],
 ];
+
+// Salvadanai e conti deposito dentro lo stesso conto: non sono né spese né entrate
+const INTERNAL = /^trasferimento\b|\btrasferimento · |\bsalvadanaio\b|conto deposito/i;
 
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
@@ -193,6 +194,10 @@ export function categorize(t, opts = {}) {
     const m = norm(r.match);
     if (m && (payeeN === m || new RegExp(`(^|[^a-z0-9])${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(textN))) return { category: r.category, subcategory: r.subcategory, source: 'regola' };
   }
+
+  // movimenti interni allo stesso conto (salvadanai BBVA, conto deposito Revolut): vengono prima del nome
+  // del titolare perché nel PDF compaiono come trasferimenti "da/verso Joaquim Francalanci"
+  if (INTERNAL.test(text)) return { category: 'Trasferimenti', subcategory: 'Salvadanaio e conti deposito', source: 'auto' };
 
   const own = (opts.ownNames || []).map(norm).filter(Boolean);
   if (own.some((n) => payeeN === n || payeeN === n.split(' ').reverse().join(' '))) {

@@ -12,6 +12,9 @@ App web gratuita e personale per tenere traccia delle spese partendo dagli estra
 - **Controllo saldi**: per ogni estratto verifica che i movimenti letti tornino con i saldi del PDF e mostra il saldo di ogni conto
   (per Revolut il disponibile = contabile + movimenti in sospeso, come nell'app)
 - **Giroconti e contanti**: riconosce i soldi spostati tra i tuoi conti (anche abbinando uscita ed entrata) e i prelievi
+- **Duplicati**: lo stesso movimento importato da estratti diversi (o sovrapposti) viene riconosciuto da conto + data + importo
+  e saltato; se il nuovo estratto è più dettagliato aggiorna il beneficiario. In *Movimenti → Trova duplicati* puoi controllare quelli già salvati
+- **Salvadanai / conti deposito**: i trasferimenti interni allo stesso conto non sono spese né entrate
 - Esporta CSV (`Amount,Date,Note,Payee,Currency,Category,Subcategory,Account`) e backup JSON
 
 Nessun build, nessuna dipendenza a runtime: HTML + JavaScript + [pdf.js](https://mozilla.github.io/pdf.js/) (in `vendor/`).
@@ -35,7 +38,7 @@ Per usarla dal telefono si può pubblicare gratis con **GitHub Pages**
 | Revolut  | ✅ testato su un estratto conto reale (movimenti in sospeso inclusi, stornati esclusi) |
 | N26      | ✅ testato su un estratto reale ("Estratto conto preliminare" mensile) |
 | Satispay | 🟡 parser basato sul layout tipico, da verificare con un estratto reale |
-| BBVA     | ✅ testato su un estratto reale ("Estratto conto trimestrale": la somma dei movimenti torna con i saldi) |
+| BBVA     | ✅ testato su estratti reali: "Estratto conto trimestrale" (con controllo saldi) e "Ultimi movimenti" dall'app (max 6 mesi, con beneficiario e IBAN) |
 | Altre    | parser generico: riconosce righe con data + descrizione + importo |
 
 Se un estratto non viene letto bene, nella schermata *Importa* c'è **"Mostra testo estratto"**:

@@ -3,7 +3,7 @@ import { extractLines } from './pdf-text.js';
 import { parseStatement, PARSERS } from './parsers/index.js';
 import { parseCsv, toCsv } from './csv.js';
 import { CATEGORIES, categoryType } from './categories.js';
-import { load, save, addTransactions, applyCategory, linkTransfers, newId } from './store.js';
+import { load, save, addTransactions, applyCategory, linkTransfers, matchExisting, findSavedDuplicates, newId } from './store.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -133,16 +133,27 @@ function renderSummary() {
   $('#sum-payees').innerHTML = `<table class="tx">${top.map(([p, v]) => `<tr><td>${esc(p)}</td><td class="num">${eur(v)}</td></tr>`).join('')}</table>`;
 }
 
-// Saldo di ogni conto dall'ultimo estratto conto importato
+// Saldo di ogni conto: quello dell'ultimo estratto con saldo, più i movimenti importati con data successiva
+// (es. BBVA: saldo del trimestrale al 01/10 + movimenti di ottobre dall'esportazione "Ultimi movimenti")
+function currentBalances() {
+  return Object.entries(state.balances || {}).map(([acc, b]) => {
+    const later = state.transactions.filter((t) => t.account === acc && b.date && t.date > b.date);
+    const delta = later.reduce((s, t) => s + t.amount, 0);
+    const last = later.reduce((d, t) => (t.date > d ? t.date : d), b.date || '');
+    return [acc, { ...b, available: b.available + delta, date: last, rolled: later.length, from: b.date }];
+  });
+}
+
 function renderBalances() {
-  const entries = Object.entries(state.balances || {});
+  const entries = currentBalances();
   const box = $('#sum-balances');
   if (!entries.length) { box.innerHTML = ''; return; }
   const total = entries.reduce((s, [, b]) => s + b.available, 0);
   box.innerHTML = `<div class="tiles">${entries.map(([acc, b]) =>
     `<div class="tile"><div class="k">${esc(acc)}${b.date ? ` · al ${b.date.slice(8)}/${b.date.slice(5, 7)}/${b.date.slice(0, 4)}` : ''}</div>
       <div class="v">${eur(b.available)}</div>
-      ${b.pending ? `<div class="muted">contabile ${eur(b.booked)} · in sospeso ${eur(b.pending)}</div>` : ''}</div>`).join('')}
+      ${b.pending && !b.rolled ? `<div class="muted">contabile ${eur(b.booked)} · in sospeso ${eur(b.pending)}</div>` : ''}
+      ${b.rolled ? `<div class="muted">saldo estratto al ${b.from.slice(8)}/${b.from.slice(5, 7)} + ${b.rolled} movimenti successivi</div>` : ''}</div>`).join('')}
     <div class="tile"><div class="k">Totale conti</div><div class="v">${eur(total)}</div></div></div>`;
 }
 
@@ -152,6 +163,7 @@ function renderTransfers(txs, period) {
   const groups = [
     ['Giroconti tra i tuoi conti', 'Giroconto tra miei conti'],
     ['Ricariche Satispay', 'Ricarica Satispay'],
+    ['Salvadanai e conti deposito (netto)', 'Salvadanaio e conti deposito'],
     ['Verso risparmi e investimenti', 'Investimenti e risparmi'],
     ['Prelievi di contanti', 'Prelievo contanti'],
     ['Altri trasferimenti', 'Altro'],
@@ -159,7 +171,7 @@ function renderTransfers(txs, period) {
   const rows = groups.map(([label, sub]) => {
     const list = transfers.filter((t) => t.subcategory === sub);
     // per giroconti e ricariche conta solo il lato in uscita (l'entrata è lo stesso denaro)
-    const moved = sub === 'Investimenti e risparmi'
+    const moved = sub === 'Investimenti e risparmi' || sub === 'Salvadanaio e conti deposito'
       ? -list.reduce((s, t) => s + t.amount, 0)
       : -list.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0) || list.reduce((s, t) => s + t.amount, 0);
     return list.length ? `<tr><td>${label}<div class="muted">${list.length} moviment${list.length === 1 ? 'o' : 'i'}</div></td><td class="num">${eur(moved)}</td></tr>` : '';
@@ -217,11 +229,11 @@ function filteredList() {
     (!q || `${t.payee} ${t.note}`.toLowerCase().includes(q)));
 }
 
-function txRow(t, { editable = true } = {}) {
+function txRow(t, { editable = true, twin = null } = {}) {
   const transfer = categoryType(t.category) === 'transfer';
-  return `<tr data-id="${t.id}" class="${transfer ? 'transfer' : ''}">
+  return `<tr data-id="${t.id}" class="${transfer ? 'transfer' : ''}${twin ? ' dup' : ''}">
     <td class="date">${t.date.slice(8)}/${t.date.slice(5, 7)}<div class="muted">${t.date.slice(0, 4)}</div></td>
-    <td><span class="payee">${esc(t.payee)}</span>${t.pending ? '<span class="tag">in sospeso</span>' : ''}
+    <td><span class="payee">${esc(t.payee)}</span>${t.pending ? '<span class="tag">in sospeso</span>' : ''}${twin ? `<span class="tag">già presente${twin.payee !== t.payee ? ` come «${esc(twin.payee)}»` : ''}</span>` : ''}
       <div class="muted">${esc(t.note)}${t.account ? ' · ' + esc(t.account) : ''}</div></td>
     <td><select data-act="cat">${categoryOptions(`${t.category}|${t.subcategory}`)}</select>
       ${t.catSource === 'manuale' ? '' : `<div class="muted">${catSourceLabel(t)}</div>`}</td>
@@ -301,6 +313,39 @@ function recategorize(list = state.transactions) {
   linkTransfers(state);
 }
 
+$('#btn-dups').addEventListener('click', showDuplicates);
+
+function showDuplicates() {
+  const pairs = findSavedDuplicates(state);
+  const dlg = $('#dlg');
+  const side = (t) => `<div class="dup-side"><b>${esc(t.payee)}</b> <span class="${t.amount < 0 ? 'neg' : 'pos'}">${eur(t.amount)}</span>
+    <div class="muted">${t.date.split('-').reverse().join('/')} · ${esc(t.account)} · ${esc(t.category)} › ${esc(t.subcategory)}</div>
+    <div class="muted">${esc(t.note)}</div><div class="muted">da: ${esc(t.source || 'import precedente')}</div>
+    <button class="link" data-del="${t.id}">Elimina questo</button></div>`;
+  dlg.innerHTML = `<form method="dialog" class="dups">
+    <h2>Possibili duplicati</h2>
+    <p class="hint">Stesso conto e stesso importo, a massimo 3 giorni di distanza, da estratti diversi.
+      Tieni quello con il beneficiario più preciso.</p>
+    ${pairs.length ? pairs.map(([a, b]) => `<div class="dup-pair" data-pair="${a.id}|${b.id}">${side(a)}${side(b)}
+      <button class="link" data-keep="${a.id}|${b.id}">Non sono doppioni</button></div>`).join('')
+      : '<p class="empty">Nessun duplicato trovato 👍</p>'}
+    <div class="toolbar"><button value="close">Chiudi</button></div>
+  </form>`;
+  dlg.onclick = (e) => {
+    const del = e.target.dataset.del;
+    const keep = e.target.dataset.keep;
+    if (!del && !keep) return;
+    e.preventDefault();
+    if (del) state.transactions = state.transactions.filter((t) => t.id !== del);
+    if (keep) state.notDuplicates = [...(state.notDuplicates || []), keep.split('|').sort().join('|')];
+    linkTransfers(state);
+    persist();
+    showDuplicates();
+  };
+  dlg.onclose = () => { dlg.onclick = null; render(); };
+  if (!dlg.open) dlg.showModal();
+}
+
 $('#btn-export').addEventListener('click', () => download(`spese_${new Date().toISOString().slice(0, 10)}.csv`, toCsv(filteredList()), 'text/csv'));
 
 $('#btn-add').addEventListener('click', () => {
@@ -375,7 +420,7 @@ function prepareImport(id, bankOverride) {
   const account = imp.account || (result.bank === 'csv' ? guessAccountFromName(imp.file.name) : result.bankLabel);
   imp.account = account;
   imp.txs = result.transactions.map((t) => {
-    const withAcc = { ...t, account: t.account || account };
+    const withAcc = { ...t, account: t.account || account, source: imp.file.name };
     return t.category ? { ...withAcc, catSource: 'manuale' } : applyCategory(withAcc, state);
   });
   renderImport(id);
@@ -403,17 +448,20 @@ function renderImport(id) {
   const { result, txs } = imp;
   const out = -txs.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0);
   const inn = txs.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const twins = matchExisting(state, txs);
+  const dups = twins.filter(Boolean).length;
+  const fresh = txs.length - dups;
   box.innerHTML = `<h2>${esc(imp.file.name)}</h2>
     <div class="toolbar">
       ${imp.lines ? `<label>Formato <select data-act="bank">${PARSERS.map((p) => `<option value="${p.id}"${p.id === result.bank ? ' selected' : ''}>${p.label}</option>`).join('')}</select></label>` : ''}
       <label>Conto <input data-act="account" value="${esc(imp.account)}" size="12"></label>
-      <span class="muted">${txs.length} movimenti · uscite ${eur(out)} · entrate ${eur(inn)}</span>
+      <span class="muted">${txs.length} movimenti · uscite ${eur(out)} · entrate ${eur(inn)}${dups ? ` · <b>${dups} già presenti</b> (verranno saltati)` : ''}</span>
     </div>
     ${balanceCheck(result.balance)}
-    ${txs.length ? `<div class="table-wrap"><table class="tx"><tbody>${txs.map((t, i) => txRow({ ...t, id: i }, { editable: false })).join('')}</tbody></table></div>`
+    ${txs.length ? `<div class="table-wrap"><table class="tx"><tbody>${txs.map((t, i) => txRow({ ...t, id: i }, { editable: false, twin: twins[i] })).join('')}</tbody></table></div>`
       : '<p class="neg">Nessun movimento riconosciuto. Prova a cambiare formato o guarda il testo estratto.</p>'}
     <div class="toolbar" style="margin-top:12px">
-      <button data-act="save"${txs.length ? '' : ' disabled'}>Salva ${txs.length} movimenti</button>
+      <button data-act="save"${fresh || dups ? '' : ' disabled'}>${fresh ? `Salva ${fresh} nuovi movimenti` : 'Nessun movimento nuovo: conferma'}</button>
       <button data-act="csv" class="secondary"${txs.length ? '' : ' disabled'}>Scarica CSV</button>
       ${imp.lines ? '<button data-act="dump" class="secondary">Mostra testo estratto</button>' : ''}
       <button data-act="discard" class="link">Scarta</button>
@@ -433,7 +481,7 @@ function renderImport(id) {
   box.onclick = (e) => {
     const act = e.target.dataset.act;
     if (act === 'save') {
-      const { added, skipped } = addTransactions(state, imp.txs);
+      const { added, skipped, improved } = addTransactions(state, imp.txs);
       const bal = imp.result.balance;
       const prev = state.balances[imp.account];
       if (bal && (!prev || !prev.date || (bal.date || '') >= prev.date)) {
@@ -442,7 +490,7 @@ function renderImport(id) {
       linkTransfers(state);
       persist();
       pending.delete(id);
-      box.innerHTML = `<h2>${esc(imp.file.name)}</h2><p>✅ ${added} movimenti salvati${skipped ? `, ${skipped} già presenti saltati` : ''}.
+      box.innerHTML = `<h2>${esc(imp.file.name)}</h2><p>✅ ${added} movimenti salvati${skipped ? `, ${skipped} già presenti saltati` : ''}${improved ? ` (${improved} aggiornati con il beneficiario più preciso)` : ''}.
         <button class="link" data-go="summary">Vai al riepilogo</button></p>`;
     } else if (act === 'csv') {
       download(imp.file.name.replace(/\.(pdf|csv)$/i, '') + '.csv', toCsv(imp.txs), 'text/csv');

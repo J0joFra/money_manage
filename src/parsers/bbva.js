@@ -1,4 +1,6 @@
-// Parser per gli estratti conto PDF di BBVA (Italia), es. "Estratto conto trimestrale".
+// Parser per i PDF di BBVA (Italia). Due formati:
+//  1. "Ultimi movimenti" (esportazione dall'app, max 6 mesi): vedi parseUltimiMovimenti più sotto
+//  2. "Estratto conto trimestrale", descritto qui:
 // Layout: "Data contabile | Data valuta | Causale | Importo (EUR) | Saldo (EUR)" con date senza anno (dd/mm)
 // e importi firmati. La causale di ogni movimento è su più righe CENTRATE verticalmente sulla
 // riga con data e importo: alcune righe stanno sopra, altre sotto. Per assegnarle al movimento giusto
@@ -36,6 +38,7 @@ function periodYears(lines) {
 }
 
 export function parse(lines) {
+  if (lines.some((l) => /^Ultimi movimenti/i.test(l.text))) return parseUltimiMovimenti(lines);
   const holderLine = lines.find((l) => /^Titolare/i.test(l.cells[0].text));
   const holder = holderLine?.cells[1]?.text.split(/[,;]/)[0].trim() || null;
   const period = periodYears(lines);
@@ -124,5 +127,79 @@ function build(date, amount, texts) {
     currency: 'EUR',
     payee,
     note: type ? `${type[1]}${rest ? ' · ' + rest : ''}` : full,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Formato "Ultimi movimenti": colonne Data | Causale | Beneficiario | Importo.
+// Ogni movimento occupa 3 righe:
+//   28/10/2026  | Bonifico eseguito      | IT54V0366901600906004683385 | -600,00 €
+//   Data valuta | 2914412892 2650384...   | REVOLUT JO
+//   28/10/2026  [| altra riga di causale]
+// Per i pagamenti con carta la prima riga della causale è l'esercente e la seconda "Pagamento con carta".
+// Non c'è il saldo, quindi niente controllo di coerenza.
+
+const FULL_DATE = /^\d{2}\/\d{2}\/\d{4}$/;
+const PAGE_NOISE = /^(Ultimi movimenti|Data$|BANCO BILBAO|Milano, Monza|\d+\/\d+$)/;
+const IBAN_RE = /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/;
+
+function parseUltimiMovimenti(lines) {
+  const header = lines.find((l) => l.cells.some((c) => c.text === 'Causale') && l.cells.some((c) => c.text === 'Beneficiario'));
+  const col = (name) => header.cells.find((c) => c.text === name)?.x;
+  const causaleX = col('Causale');
+  const benefX = col('Beneficiario');
+  const importoX = col('Importo');
+  const inCol = (c, x, next) => c.x >= x - 5 && (next == null || c.x < next - 5);
+
+  const txs = [];
+  let cur = null;
+  const flush = () => { if (cur) txs.push(buildMovimento(cur)); cur = null; };
+
+  for (const l of lines) {
+    if (PAGE_NOISE.test(l.cells[0].text) || l === header || (l.cells[0].text === 'Data' && l.cells.length > 2)) continue;
+    const first = l.cells[0];
+    const amountCell = l.cells.find((c) => c.x >= importoX - 20 && parseAmount(c.text));
+    if (FULL_DATE.test(first.text) && amountCell) {
+      flush();
+      cur = { date: parseDate(first.text), amount: parseAmount(amountCell.text).value, causale: [], benef: [] };
+    } else if (!cur) {
+      continue;
+    }
+    for (const c of l.cells) {
+      if (c === first && (FULL_DATE.test(c.text) || c.text === 'Data valuta')) continue;
+      if (c === amountCell) continue;
+      if (inCol(c, causaleX, benefX)) cur.causale.push(c.text);
+      else if (inCol(c, benefX, importoX - 20) && c.text !== '-') cur.benef.push(c.text);
+    }
+  }
+  flush();
+  return { holder: null, transactions: txs };
+}
+
+const titleCase = (s) => s.toLowerCase().replace(/(^|[\s'.-])\p{L}/gu, (m) => m.toUpperCase());
+
+function buildMovimento(m) {
+  const causale = m.causale.reduce((acc, t) => (acc.endsWith('-') ? acc + t : acc ? `${acc} ${t}` : t), '');
+  const iban = m.benef.find((b) => IBAN_RE.test(b));
+  const name = cleanSpaces(m.benef.filter((b) => b !== iban).join(' '));
+  const [kind, ...restParts] = m.causale;
+  const rest = cleanSpaces(restParts.join(' '));
+  let payee;
+  let type;
+  if (/^Bonifico eseguito/i.test(kind)) { type = 'Bonifico eseguito'; payee = name || rest; }
+  else if (/^Bonifico ricevuto/i.test(kind)) { type = 'Bonifico ricevuto'; payee = rest.replace(/^Da\s+/i, '') || name; payee = /[a-z]/.test(payee) && payee === payee.toLowerCase() ? titleCase(payee) : payee; }
+  else if (/^Addebito a tuo carico/i.test(kind)) { type = 'Addebito diretto'; payee = rest.replace(/^N \d{8,}\s*/, '').replace(/\s+(Viale|Via|V\.le|Piazza|Corso)\b.*$/i, ''); }
+  else if (/^Liquidazione interessi/i.test(kind)) { type = 'Liquidazione interessi e spese'; payee = type; }
+  else if (/^Trasferimento/i.test(kind)) { type = 'Trasferimento'; payee = /salvadanaio/i.test(causale) ? 'Salvadanaio' : rest || name || 'Trasferimento'; }
+  else if (/^Pagamento con carta/i.test(rest)) { type = 'Pagamento con carta'; payee = titleCase(kind); }
+  else { type = kind; payee = rest || name || kind; }
+  const useless = (x) => !x || x === payee || x === type || /^commissioni-spese$/i.test(x);
+  const extra = [useless(rest) ? '' : rest, useless(name) ? '' : name, iban || ''].filter(Boolean);
+  return {
+    date: m.date,
+    amount: round2(m.amount),
+    currency: 'EUR',
+    payee: cleanSpaces(payee) || type,
+    note: [type, ...extra].join(' · '),
   };
 }

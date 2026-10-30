@@ -96,6 +96,22 @@ import { linkTransfers, applyCategory } from '../src/store.js';
     [c(-80, 'Affitto', [{ match: 'affitto', category: 'Casa', subcategory: 'Affitto', amount: 80 }]), 'Affitto'],
     [c(-81, 'Affitto', [{ match: 'affitto', category: 'Casa', subcategory: 'Affitto', amount: 80 }]), 'Altro']);
 }
+// duplicati tra formati diversi dello stesso conto
+import { addTransactions, findSavedDuplicates } from '../src/store.js';
+{
+  const st = { rules: [], settings: { ownNames: [] }, transactions: [], notDuplicates: [] };
+  const tx = (date, amount, payee, source) => ({ account: 'BBVA', date, amount, payee, note: '', currency: 'EUR', source });
+  addTransactions(st, [tx('2026-09-28', -600, 'Ordine di pagamento', 'trim.pdf'), tx('2026-09-28', -50, 'Ordine di pagamento', 'trim.pdf'),
+    tx('2026-01-12', -3, 'Bar', 'trim.pdf'), tx('2026-01-12', -3, 'Bar', 'trim.pdf')]);
+  const r = addTransactions(st, [tx('2026-09-28', -600, 'REVOLUT JO', 'ultimi.pdf'), tx('2026-09-28', -50, 'JOAQUIM FRANCALANCI', 'ultimi.pdf'),
+    tx('2026-01-12', -3, 'Bar', 'ultimi.pdf'), tx('2026-01-12', -3, 'Bar', 'ultimi.pdf'), tx('2026-01-12', -3, 'Bar', 'ultimi.pdf')]);
+  unit.push([r.added, 1], [r.skipped, 4], [r.improved, 2], [st.transactions.find((t) => t.amount === -600).payee, 'REVOLUT JO']);
+  // doppione con data diversa (data valuta vs contabile) da un altro file
+  st.transactions.push({ id: 'x1', account: 'BBVA', date: '2026-09-30', amount: -600, payee: 'Revolut', source: 'altro.pdf' });
+  const pairs = findSavedDuplicates(st);
+  // (il terzo "Bar" arrivato da un altro estratto viene segnalato anche lui come possibile doppione)
+  unit.push([pairs.length, 2], [pairs[0].map((t) => t.date).join(','), '2026-09-28,2026-09-30']);
+}
 unit.forEach(([a, b], i) => { if (a !== b) { failed++; console.log(`FAIL unit #${i}: ${a} !== ${b}`); } });
 console.log(`${unit.length} test unitari, ${ran} fixture PDF`);
 process.exit(failed ? 1 : 0);
