@@ -85,7 +85,22 @@ export function parse(lines) {
       txs.push(build(toIso(row.cells[0].text), parseAmount(amountCell.text).value, texts));
     }
   }
-  return { holder, transactions: txs };
+  const endLine = lines.find((l) => /Saldo fine trimestre/i.test(l.text));
+  const startLine = lines.find((l) => /Saldo inizio trimestre/i.test(l.text));
+  const amountIn = (l) => { const m = l?.text.match(/:\s*(-?[\d.]+,\d{2})/); return m ? parseAmount(m[1]).value : null; };
+  const closing = amountIn(endLine);
+  const opening = amountIn(startLine);
+  const periodEnd = lines.find((x) => /Periodo di riferimento/i.test(x.text))?.text.match(/fino a (\d{2}\/\d{2}\/\d{4})/);
+  let balance = null;
+  if (closing != null) {
+    const warnings = [];
+    const sum = round2(txs.reduce((s, t) => s + t.amount, 0));
+    if (opening != null && Math.abs(round2(opening + sum) - closing) > 0.005) {
+      warnings.push(`saldo iniziale ${opening.toFixed(2)} + movimenti ${sum.toFixed(2)} ≠ saldo finale ${closing.toFixed(2)}`);
+    }
+    balance = { date: periodEnd ? parseDate(periodEnd[1]) : txs[txs.length - 1]?.date, booked: closing, pending: 0, available: closing, warnings };
+  }
+  return { holder, transactions: txs, balance };
 }
 
 function build(date, amount, texts) {

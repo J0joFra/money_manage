@@ -4,7 +4,7 @@
 export const CATEGORIES = [
   { name: 'Alimentari', type: 'expense', icon: '🛒', subs: ['Supermercato', 'Discount', 'Panetteria e pasticceria', 'Macelleria e pescheria', 'Frutta e verdura', 'Altro'] },
   { name: 'Ristorazione', type: 'expense', icon: '🍽️', subs: ['Ristorante', 'Pizzeria', 'Fast food', 'Bar e caffè', 'Gelateria e dolci', 'Autogrill', 'Delivery', 'Mensa', 'Altro'] },
-  { name: 'Trasporti', type: 'expense', icon: '🚗', subs: ['Carburante', 'Pedaggi', 'Parcheggio', 'Treno', 'Mezzi pubblici', 'Taxi e NCC', 'Sharing (auto, bici, monopattini)', 'Aereo', 'Manutenzione auto', 'Bollo e revisione', 'Altro'] },
+  { name: 'Trasporti', type: 'expense', icon: '🚗', subs: ['Carburante', 'Pedaggi', 'Parcheggio', 'Treno', 'Mezzi pubblici', 'Taxi e NCC', 'Sharing (auto, bici, monopattini)', 'Aereo', 'Acquisto auto', 'Rata finanziamento auto', 'Manutenzione auto', 'Bollo e revisione', 'Altro'] },
   { name: 'Casa', type: 'expense', icon: '🏠', subs: ['Affitto', 'Mutuo', 'Condominio', 'Arredamento', 'Fai da te e ferramenta', 'Pulizia', 'Altro'] },
   { name: 'Bollette', type: 'expense', icon: '💡', subs: ['Luce', 'Gas', 'Acqua', 'Internet', 'Telefono', 'Rifiuti', 'Altro'] },
   { name: 'Abbonamenti', type: 'expense', icon: '🔁', subs: ['Streaming video', 'Musica', 'Software e AI', 'Cloud e storage', 'Giornali e riviste', 'Palestra', 'Condivisione abbonamenti', 'Altro'] },
@@ -42,12 +42,20 @@ export const RULES = [
   [/^(revolut|n26|bbva|satispay)\b/i, 'Trasferimenti', 'Giroconto tra miei conti'],
   [/\btrasferimento · |\bsalvadanaio\b/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/conto di investimento|salvadanaio|spazio|pocket|vault|trade republic|scalable|directa|fineco|degiro|moneyfarm/i, 'Trasferimenti', 'Investimenti e risparmi'],
+  [/^conversione in [a-z]{3}\b|exchanged to/i, 'Trasferimenti', 'Giroconto tra miei conti'], // cambio valuta tra i tuoi conti Revolut
+  [/^commissione revolut\b/i, 'Finanza', 'Commissioni bancarie', '-'],
+  [/conto deposito/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/\btrasf\b/i, 'Trasferimenti', 'Giroconto tra miei conti'], // causale che usi per i giroconti
-  [/prelievo|prelevamento|\batm\b|bancomat|cash withdrawal|contante/i, 'Trasferimenti', 'Prelievo contanti', '-'],
+  // "ATM" è anche l'Azienda Trasporti Milanesi: va riconosciuta prima dei prelievi
+  [/azienda trasporti milanesi|atm milan|ticket atm/i, 'Trasporti', 'Mezzi pubblici', '-'],
+  [/prelievo|prelevamento|\batm (withdrawal|cash)\b|bancomat|cash withdrawal|contante/i, 'Trasferimenti', 'Prelievo contanti', '-'],
 
   // finanza
   [/paga in 3 rate|klarna|scalapay|afterpay|paypal pay in|\brata\b/i, 'Finanza', 'Rate e BNPL', '-'],
-  [/\bagos\b|findomestic|compass|cofidis|santander consumer|younited|prestito|finanziamento/i, 'Finanza', 'Prestiti e finanziamenti', '-'],
+  // auto: bonifico BBVA per l'acquisto (20/07/2026) e finanziamento Agos
+  [/ithj232827/i, 'Trasporti', 'Acquisto auto', '-'],
+  [/\bagos\b/i, 'Trasporti', 'Rata finanziamento auto', '-'],
+  [/findomestic|compass|cofidis|santander consumer|younited|prestito|finanziamento/i, 'Finanza', 'Prestiti e finanziamenti', '-'],
   [/liquidazione interessi e spese|commission|canone (conto|mensile)|imposta di bollo|spese tenuta/i, 'Finanza', 'Commissioni bancarie', '-'],
 
   // trasporti
@@ -60,6 +68,14 @@ export const RULES = [
   [/\benjoy\b|share now|car2go|\blime\b|\bdott\b|\btier\b|\bbird\b|bikemi|mimoto|cooltra|\bzity\b/i, 'Trasporti', 'Sharing (auto, bici, monopattini)', '-'],
   [/ryanair|easyjet|wizz|ita airways|vueling|volotea|lufthansa|aeroport/i, 'Viaggi', 'Voli', '-'],
   [/meccanic|gommist|officina|autoricambi|norauto|carrozzeria/i, 'Trasporti', 'Manutenzione auto', '-'],
+
+  // trasporti esteri e servizi di viaggio
+  [/\bratp\b|\bstib\b|de lijn|\bdpp\b|\bbkk\b|budapestgo|pay&go|\bm[1-5]\b|\btramv?\b|autostazioni/i, 'Trasporti', 'Mezzi pubblici', '-'],
+  [/\bsncb\b|\bnmbs\b|trainline|\bsbb\b|\bsncf\b|renfe/i, 'Trasporti', 'Treno', '-'],
+  [/serravalle|\bteem\b|\ba58\b|\bmiser\b/i, 'Trasporti', 'Pedaggi', '-'],
+  [/cosmopark|milano parking/i, 'Trasporti', 'Parcheggio', '-'],
+  [/autoscuola|scuola guida/i, 'Trasporti', 'Altro', '-'],
+  [/lastminute|bravonext|\bomio\b|civitatis|getyourguide|tiqets|travel|tourism|tourist|turisztikai|airport|groupe adp|\bcruises?\b/i, 'Viaggi', 'Attività', '-'],
 
   // ristorazione
   [/autogrill|chef express|sarni|\bmy chef\b|area di servizio|\bads\b/i, 'Ristorazione', 'Autogrill', '-'],
@@ -126,6 +142,23 @@ export const RULES = [
 
   // persone
   [/leetchi|growish|colletta|regalo/i, 'Persone', 'Collette e regali di gruppo', '-'],
+
+  // altri esercenti riconoscibili (dopo le regole principali)
+  [/\bwolt\b/i, 'Ristorazione', 'Delivery', '-'],
+  [/glacier|ciambell|tartell|ladur[eé]e|kurtos/i, 'Ristorazione', 'Gelateria e dolci', '-'],
+  [/focacc|burger|brasserie|bagel|kitchen|fusion|\bmomo\b|\bpub\b|cantini[eè]re|restaurant|\bfood\b|\bbeers?\b|woodstock|\bstube\b/i, 'Ristorazione', 'Ristorante', '-'],
+  [/muzeum|\bmusea\b|mus[eé]e|gravensteen|autoworld|strahov|atomium/i, 'Svago', 'Musei e cultura', '-'],
+  [/instant gaming|\bg2a\b|kinguin|gamer2gamer|\bg2g\b|bo+wling|\blego\b/i, 'Svago', 'Giochi e videogiochi', '-'],
+  [/playtomic|sportit/i, 'Svago', 'Sport', '-'],
+  [/liveticket|live ticket|dropticket/i, 'Svago', 'Eventi e concerti', '-'],
+  [/twitch|google play|capcut|fiverr|register\.?it|registerspa/i, 'Abbonamenti', 'Software e AI', '-'],
+  [/fanatics|piazza italia|cotton|casual store/i, 'Shopping', 'Abbigliamento', '-'],
+  [/beauty|estetic|\bnails?\b/i, 'Cura personale', 'Estetica', '-'],
+  [/max factor|profum/i, 'Cura personale', 'Cosmetici', '-'],
+  [/mooney.*ricaric|ricarica telefonica|windtre/i, 'Bollette', 'Telefono', '-'],
+  [/edicola|\brelay\b|printerink/i, 'Shopping', 'Cartoleria e copisteria', '-'],
+  [/ferrament/i, 'Casa', 'Fai da te e ferramenta', '-'],
+  [/tesco|g20 supermarch|orseldis/i, 'Alimentari', 'Supermercato', '-'],
 
   // entrate
   [/accredito competenze|stipendio|emolumenti|salary|busta paga/i, 'Entrate', 'Stipendio', '+'],

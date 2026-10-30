@@ -9,6 +9,9 @@ App web gratuita e personale per tenere traccia delle spese partendo dagli estra
 - **Riepilogo**: spese per categoria e sottocategoria, andamento mensile, dove spendi di più
 - **Privacy**: tutto gira nel browser, i PDF e i dati non vengono mai inviati a un server
   (sono salvati nel `localStorage` del browser: fai il backup da *Impostazioni*)
+- **Controllo saldi**: per ogni estratto verifica che i movimenti letti tornino con i saldi del PDF e mostra il saldo di ogni conto
+  (per Revolut il disponibile = contabile + movimenti in sospeso, come nell'app)
+- **Giroconti e contanti**: riconosce i soldi spostati tra i tuoi conti (anche abbinando uscita ed entrata) e i prelievi
 - Esporta CSV (`Amount,Date,Note,Payee,Currency,Category,Subcategory,Account`) e backup JSON
 
 Nessun build, nessuna dipendenza a runtime: HTML + JavaScript + [pdf.js](https://mozilla.github.io/pdf.js/) (in `vendor/`).

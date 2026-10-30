@@ -4,7 +4,8 @@ import { categorize } from './categories.js';
 
 const KEY = 'spese.v1';
 
-const empty = () => ({ transactions: [], rules: [], settings: { ownNames: [] } });
+// balances: { [conto]: { date, booked, pending, available } } saldo letto dall'ultimo estratto conto
+const empty = () => ({ transactions: [], rules: [], balances: {}, settings: { ownNames: [] } });
 
 export function load() {
   try {

@@ -83,6 +83,7 @@ function renderSummary() {
     return;
   }
 
+  renderBalances();
   $('#sum-tiles').innerHTML = [
     ['Spese', eur(spent), 'neg'],
     ['Entrate', eur(income), 'pos'],
@@ -130,6 +131,19 @@ function renderSummary() {
   for (const t of expenses) byPayee.set(t.payee, (byPayee.get(t.payee) || 0) - t.amount);
   const top = [...byPayee.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   $('#sum-payees').innerHTML = `<table class="tx">${top.map(([p, v]) => `<tr><td>${esc(p)}</td><td class="num">${eur(v)}</td></tr>`).join('')}</table>`;
+}
+
+// Saldo di ogni conto dall'ultimo estratto conto importato
+function renderBalances() {
+  const entries = Object.entries(state.balances || {});
+  const box = $('#sum-balances');
+  if (!entries.length) { box.innerHTML = ''; return; }
+  const total = entries.reduce((s, [, b]) => s + b.available, 0);
+  box.innerHTML = `<div class="tiles">${entries.map(([acc, b]) =>
+    `<div class="tile"><div class="k">${esc(acc)}${b.date ? ` · al ${b.date.slice(8)}/${b.date.slice(5, 7)}/${b.date.slice(0, 4)}` : ''}</div>
+      <div class="v">${eur(b.available)}</div>
+      ${b.pending ? `<div class="muted">contabile ${eur(b.booked)} · in sospeso ${eur(b.pending)}</div>` : ''}</div>`).join('')}
+    <div class="tile"><div class="k">Totale conti</div><div class="v">${eur(total)}</div></div></div>`;
 }
 
 // Soldi spostati tra i tuoi conti e contanti
@@ -367,6 +381,17 @@ function prepareImport(id, bankOverride) {
   renderImport(id);
 }
 
+// Esito del controllo: i movimenti letti sommati al saldo iniziale danno il saldo finale del PDF?
+function balanceCheck(b) {
+  if (!b) return '';
+  const when = b.date ? ` al ${b.date.split('-').reverse().join('/')}` : '';
+  const detail = b.pending ? ` (contabile ${eur(b.booked)}, in sospeso ${eur(b.pending)})` : '';
+  const check = b.warnings?.length
+    ? `<br><span class="neg">⚠️ Controllo saldi non riuscito: ${b.warnings.map(esc).join("; ")}</span>`
+    : '<br><span class="pos">✓ Movimenti coerenti con i saldi del PDF</span>';
+  return `<p class="hint">Saldo${when}: <b>${eur(b.available)}</b>${detail}${check}</p>`;
+}
+
 function guessAccountFromName(name) {
   const p = PARSERS.find((x) => x.id !== 'generic' && name.toLowerCase().includes(x.id));
   return p ? p.label : 'Importato';
@@ -384,6 +409,7 @@ function renderImport(id) {
       <label>Conto <input data-act="account" value="${esc(imp.account)}" size="12"></label>
       <span class="muted">${txs.length} movimenti · uscite ${eur(out)} · entrate ${eur(inn)}</span>
     </div>
+    ${balanceCheck(result.balance)}
     ${txs.length ? `<div class="table-wrap"><table class="tx"><tbody>${txs.map((t, i) => txRow({ ...t, id: i }, { editable: false })).join('')}</tbody></table></div>`
       : '<p class="neg">Nessun movimento riconosciuto. Prova a cambiare formato o guarda il testo estratto.</p>'}
     <div class="toolbar" style="margin-top:12px">
@@ -408,6 +434,11 @@ function renderImport(id) {
     const act = e.target.dataset.act;
     if (act === 'save') {
       const { added, skipped } = addTransactions(state, imp.txs);
+      const bal = imp.result.balance;
+      const prev = state.balances[imp.account];
+      if (bal && (!prev || !prev.date || (bal.date || '') >= prev.date)) {
+        state.balances[imp.account] = { date: bal.date, booked: bal.booked, pending: bal.pending, available: bal.available };
+      }
       linkTransfers(state);
       persist();
       pending.delete(id);
