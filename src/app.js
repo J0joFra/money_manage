@@ -137,8 +137,21 @@ function renderSummary() {
 // Saldo di ogni conto: quello dell'ultimo estratto con saldo, più i movimenti importati con data successiva
 // (es. BBVA: saldo del trimestrale al 01/10 + movimenti di ottobre dall'esportazione "Ultimi movimenti")
 function currentBalances() {
-  const list = Object.entries(state.balances || {}).map(([acc, b]) => {
+  // tutti i conti: quelli con un saldo (da estratto o impostato a mano) e quelli con movimenti importati
+  const names = [...new Set([...Object.keys(state.balances || {}), ...accounts()])]
+    .filter((n) => !n.includes(' · ') && (n !== CASH || state.balances?.[CASH]))
+    .sort((a, b) => (a === CASH) - (b === CASH) || a.localeCompare(b));
+  const list = names.map((acc) => {
+    const b = state.balances?.[acc];
     if (acc === CASH) return [acc, { ...cashBalance(state), cash: true }];
+    if (!b) {
+      // nessun estratto con il saldo (es. BBVA "Ultimi movimenti"): somma di tutti i movimenti importati,
+      // giusta se hai importato la storia del conto dall'apertura
+      const txs = state.transactions.filter((t) => t.account === acc);
+      const last = txs.reduce((d, t) => (t.date > d ? t.date : d), '');
+      const first = txs.reduce((d, t) => (!d || t.date < d ? t.date : d), '');
+      return [acc, { available: txs.reduce((s, t) => s + t.amount, 0), date: last, estimated: true, from: first }];
+    }
     const later = state.transactions.filter((t) => t.account === acc && b.date && t.date > b.date);
     const delta = later.reduce((s, t) => s + t.amount, 0);
     const last = later.reduce((d, t) => (t.date > d ? t.date : d), b.date || '');
@@ -169,6 +182,8 @@ function renderBalances() {
       <div class="v">${eur(b.available)}</div>
       ${b.pending && !b.rolled ? `<div class="muted">contabile ${eur(b.booked)} · in sospeso ${eur(b.pending)}</div>` : ''}
       ${b.savings ? '<div class="muted">calcolato dai trasferimenti verso/da il salvadanaio</div>' : ''}
+      ${b.estimated ? `<div class="muted">somma dei movimenti importati dal ${b.from.slice(8)}/${b.from.slice(5, 7)}/${b.from.slice(0, 4)} (giusta se parti dall'apertura del conto)</div>
+        <button class="link" data-setbal="${esc(acc)}">Imposta saldo esatto</button>` : ''}
       ${b.rolled ? `<div class="muted">saldo ${b.manual ? 'impostato' : 'estratto'} al ${b.from.slice(8)}/${b.from.slice(5, 7)} + ${b.rolled} movimenti successivi</div>` : ''}
       ${b.cash ? `<div class="muted">${b.withdrawn ? `+ prelievi ${eur(b.withdrawn)} ` : ''}${b.moves ? `${b.moves < 0 ? '−' : '+'} spese registrate ${eur(Math.abs(b.moves))}` : ''}</div>
         <button class="link" data-setbal="${esc(acc)}">Aggiorna saldo</button>` : ''}</div>`).join('')}
