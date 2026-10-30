@@ -88,6 +88,14 @@ import { linkTransfers, applyCategory } from '../src/store.js';
   linkTransfers(st);
   unit.push([by.a.linkedId, undefined], [by.a.category, 'Da categorizzare']);
 }
+// regole con importo
+{
+  const c = (amount, payee, userRules) => categorize({ amount, payee, note: 'Ordine di pagamento · 123' }, { userRules }).subcategory;
+  unit.push([c(-50, 'Ordine di pagamento'), 'Investimenti e risparmi'], [c(-600, 'Ordine di pagamento'), 'Giroconto tra miei conti'],
+    [c(-70, 'Ordine di pagamento'), 'Altro'],
+    [c(-80, 'Affitto', [{ match: 'affitto', category: 'Casa', subcategory: 'Affitto', amount: 80 }]), 'Affitto'],
+    [c(-81, 'Affitto', [{ match: 'affitto', category: 'Casa', subcategory: 'Affitto', amount: 80 }]), 'Altro']);
+}
 unit.forEach(([a, b], i) => { if (a !== b) { failed++; console.log(`FAIL unit #${i}: ${a} !== ${b}`); } });
 console.log(`${unit.length} test unitari, ${ran} fixture PDF`);
 process.exit(failed ? 1 : 0);

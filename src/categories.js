@@ -31,8 +31,11 @@ export function categoryType(name) {
   return CATEGORIES.find((c) => c.name === name)?.type || 'expense';
 }
 
-// [regex sul testo "payee note", categoria, sottocategoria, segno ('-' solo spese, '+' solo entrate, undefined entrambi)]
+// [regex sul testo "payee note", categoria, sottocategoria, segno ('-' solo spese, '+' solo entrate, undefined entrambi), importo esatto (facoltativo)]
 export const RULES = [
+  // ordini di pagamento ricorrenti da BBVA: 50 € risparmio mensile verso N26, 600 € verso Revolut (spese quotidiane)
+  [/^ordine di pagamento\b/i, 'Trasferimenti', 'Investimenti e risparmi', '-', 50],
+  [/^ordine di pagamento\b/i, 'Trasferimenti', 'Giroconto tra miei conti', '-', 600],
   // trasferimenti e risparmi (prima di tutto il resto)
   [/ricarica (dell'app )?satispay|satispay europe/i, 'Trasferimenti', 'Ricarica Satispay'],
   [/^ricarica\b|ricarica da (iban|carta|conto)/i, 'Trasferimenti', 'Ricarica Satispay', '+'],
@@ -142,14 +145,18 @@ function looksLikePerson(t) {
 /**
  * Restituisce { category, subcategory, source } per un movimento.
  * opts.ownNames: nomi del titolare per riconoscere i giroconti
- * opts.userRules: [{ match, category, subcategory }] regole create dall'utente (hanno la precedenza)
+ * opts.userRules: [{ match, category, subcategory, amount? }] regole create dall'utente (hanno la precedenza);
+ *   con amount la regola vale solo per movimenti di quell'importo (in valore assoluto)
  */
 export function categorize(t, opts = {}) {
   const text = `${t.payee || ''} ${t.note || ''}`;
   const payeeN = norm(t.payee);
   const textN = norm(text);
 
+  const sameAmount = (a) => a == null || a === '' || Math.abs(Math.abs(t.amount) - Math.abs(Number(a))) < 0.005;
+
   for (const r of opts.userRules || []) {
+    if (!sameAmount(r.amount)) continue;
     const m = norm(r.match);
     if (m && (payeeN === m || new RegExp(`(^|[^a-z0-9])${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(textN))) return { category: r.category, subcategory: r.subcategory, source: 'regola' };
   }
@@ -160,8 +167,8 @@ export function categorize(t, opts = {}) {
   }
 
   const sign = t.amount < 0 ? '-' : '+';
-  for (const [re, category, subcategory, onlySign] of RULES) {
-    if (onlySign && onlySign !== sign) continue;
+  for (const [re, category, subcategory, onlySign, amount] of RULES) {
+    if ((onlySign && onlySign !== sign) || !sameAmount(amount)) continue;
     if (re.test(text)) return { category, subcategory, source: 'auto' };
   }
 

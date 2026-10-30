@@ -431,15 +431,17 @@ function renderRules() {
   $('#rule-cat').innerHTML = categoryOptions('');
   $('#rules-table').innerHTML = state.rules.length
     ? `<thead><tr><th>Se contiene</th><th>Categoria</th><th></th></tr></thead><tbody>${state.rules.map((r, i) =>
-        `<tr><td>${esc(r.match)}</td><td>${esc(r.category)} › ${esc(r.subcategory)}</td><td><button class="link" data-del="${i}">✕</button></td></tr>`).join('')}</tbody>`
+        `<tr><td>${esc(r.match)}${r.amount ? ` <span class="tag">solo ${eur(r.amount)}</span>` : ''}</td><td>${esc(r.category)} › ${esc(r.subcategory)}</td><td><button class="link" data-del="${i}">✕</button></td></tr>`).join('')}</tbody>`
     : '<tr><td class="empty">Nessuna regola personale per ora</td></tr>';
   $('#cat-list').innerHTML = CATEGORIES.map((c) => `<div><b>${c.icon} ${esc(c.name)}</b>${c.subs.map(esc).join(', ')}</div>`).join('');
 }
 $('#rule-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const [category, subcategory] = $('#rule-cat').value.split('|');
-  state.rules.push({ match: $('#rule-match').value.trim(), category, subcategory });
+  const amount = $('#rule-amount').value ? Math.abs(Number($('#rule-amount').value)) : undefined;
+  state.rules.push({ match: $('#rule-match').value.trim(), category, subcategory, ...(amount ? { amount } : {}) });
   $('#rule-match').value = '';
+  $('#rule-amount').value = '';
   recategorize();
   persist();
   renderRules();
