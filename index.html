@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Le mie spese</title>
+  <meta name="theme-color" content="#1f6f5c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1>💶 Le mie spese</h1>
+    <nav id="tabs">
+      <button data-tab="summary" class="active">Riepilogo</button>
+      <button data-tab="list">Movimenti</button>
+      <button data-tab="import">Importa</button>
+      <button data-tab="rules">Regole</button>
+      <button data-tab="settings">Impostazioni</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- RIEPILOGO -->
+    <section id="tab-summary" class="tab active">
+      <div class="toolbar">
+        <label>Periodo <select id="sum-period"></select></label>
+        <label>Conto <select id="sum-account"></select></label>
+      </div>
+      <div class="tiles" id="sum-tiles"></div>
+      <div class="grid2">
+        <div class="card">
+          <h2>Spese per categoria</h2>
+          <p class="hint">Tocca una categoria per vedere le sottocategorie. I trasferimenti tra i tuoi conti sono esclusi.</p>
+          <div id="sum-cats"></div>
+        </div>
+        <div class="card">
+          <h2>Andamento mensile</h2>
+          <div id="sum-trend"></div>
+          <h2 class="mt">Dove spendi di più</h2>
+          <div id="sum-payees"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MOVIMENTI -->
+    <section id="tab-list" class="tab">
+      <div class="toolbar">
+        <input id="f-search" type="search" placeholder="Cerca beneficiario o nota…">
+        <select id="f-period"></select>
+        <select id="f-account"></select>
+        <select id="f-category"></select>
+        <button id="btn-add" class="secondary">+ Aggiungi a mano</button>
+        <button id="btn-export" class="secondary">Esporta CSV</button>
+      </div>
+      <p class="hint" id="list-count"></p>
+      <div class="table-wrap"><table class="tx" id="list-table"></table></div>
+    </section>
+
+    <!-- IMPORTA -->
+    <section id="tab-import" class="tab">
+      <div class="card">
+        <h2>Carica gli estratti conto</h2>
+        <p class="hint">PDF di Revolut, N26, Satispay, BBVA (o altre banche, con il parser generico) oppure CSV nel formato
+          <code>Amount,Date,Note,Payee,Currency</code>. Tutto viene elaborato nel tuo browser: i file non vengono inviati a nessuno.</p>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept=".pdf,.csv" multiple hidden>
+          <span>Trascina qui i file o <u>sceglili</u></span>
+        </label>
+      </div>
+      <div id="import-results"></div>
+    </section>
+
+    <!-- REGOLE -->
+    <section id="tab-rules" class="tab">
+      <div class="card">
+        <h2>Le tue regole</h2>
+        <p class="hint">Quando cambi la categoria di un movimento puoi creare una regola: i movimenti futuri con lo stesso beneficiario
+          verranno categorizzati così. Le tue regole hanno la precedenza su quelle automatiche.</p>
+        <form id="rule-form" class="toolbar">
+          <input id="rule-match" placeholder="Testo da cercare (es. Sumup acuto)" required>
+          <select id="rule-cat"></select>
+          <button>Aggiungi regola</button>
+        </form>
+        <div class="table-wrap"><table class="tx" id="rules-table"></table></div>
+      </div>
+      <div class="card">
+        <h2>Categorie disponibili</h2>
+        <div id="cat-list" class="cat-list"></div>
+      </div>
+    </section>
+
+    <!-- IMPOSTAZIONI -->
+    <section id="tab-settings" class="tab">
+      <div class="card">
+        <h2>I tuoi nomi</h2>
+        <p class="hint">I movimenti da/verso questi nomi sono giroconti tra i tuoi conti (esclusi da spese ed entrate). Uno per riga.</p>
+        <textarea id="own-names" rows="3"></textarea>
+        <button id="save-names">Salva e ricategorizza</button>
+      </div>
+      <div class="card">
+        <h2>Backup</h2>
+        <p class="hint">I dati sono salvati solo in questo browser. Fai un backup ogni tanto o per spostarli su un altro dispositivo.</p>
+        <div class="toolbar">
+          <button id="backup-export" class="secondary">Scarica backup (JSON)</button>
+          <label class="button secondary">Ripristina backup<input type="file" id="backup-import" accept=".json" hidden></label>
+          <button id="recat-all" class="secondary">Ricategorizza tutto</button>
+          <button id="wipe" class="danger">Cancella tutti i dati</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="dlg"></dialog>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

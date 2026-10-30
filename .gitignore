@@ -1,0 +1,4 @@
+node_modules/
+# estratti conto reali: contengono dati personali, non vanno mai su git
+tests/fixtures/
+*.local.*
