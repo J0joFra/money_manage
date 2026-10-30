@@ -57,8 +57,10 @@
       <div class="card">
         <h2>Overview mese per mese</h2>
         <p class="hint">Giroconti, salvadanai e investimenti non contano né come entrate né come uscite. Clicca un mese per vederne i movimenti qui sotto.
-          Saldo = soldi su tutti i conti a fine mese (* = esclusi i conti di cui non hai importato lo storico di quel periodo: passa sopra la cella per vederli). L'obiettivo vale dal mese in cui lo imposti in poi (clicca sulla cella per cambiarlo).</p>
+          Saldo = liquidità su tutti i conti a fine mese, investimenti esclusi (* = esclusi anche i conti di cui non hai importato lo storico di quel periodo: passa sopra la cella per vederli). L'obiettivo si imposta per anno e vale per tutti i mesi di quell'anno.</p>
         <div class="toolbar">
+          <label>Anno <select id="ov-year"></select></label>
+          <label>Obiettivo di saldo <span id="ov-goal-year"></span> <input id="ov-goal" type="number" step="0.01" min="0" placeholder="es. 5000" style="width:120px"> €</label>
           <label>Risparmio minimo <input id="ov-min" type="number" min="0" max="100" step="1" style="width:70px"> %</label>
         </div>
         <div class="table-wrap"><table class="tx pivot" id="ov-table"></table></div>

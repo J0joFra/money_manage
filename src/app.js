@@ -7,7 +7,7 @@ import { load, save, addTransactions, applyCategory, linkTransfers, matchExistin
   CASH, cashBalance, accountFlows, counterpartAccount } from './store.js';
 
 // Aggiornare anche version.json: se il browser ha in cache una versione vecchia compare un avviso
-export const VERSION = '2026-10-30.5';
+export const VERSION = '2026-10-30.6';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -353,6 +353,7 @@ function totalBalanceAt(endDate, balances) {
   let total = 0;
   const missing = [];
   for (const [acc, b] of balances) {
+    if (/investiment/i.test(acc)) continue; // il saldo è la liquidità: gli investimenti non contano
     if (b.pocket) {
       // tasca: i trasferimenti verso la tasca sono uscite sul conto principale
       const parent = acc.split(' · ')[0];
@@ -372,6 +373,15 @@ function totalBalanceAt(endDate, balances) {
   return { total, missing };
 }
 
+// Obiettivi di saldo per anno ({ "2026": 5000 }); converte quelli per mese della versione precedente
+function yearGoals() {
+  if (!state.yearGoals) {
+    state.yearGoals = {};
+    for (const [ym, v] of Object.entries(state.goals || {}).sort()) state.yearGoals[ym.slice(0, 4)] = v;
+  }
+  return state.yearGoals;
+}
+
 function monthlyOverview() {
   const minSaving = state.settings.minSaving ?? 0.2;
   const byMonth = new Map();
@@ -388,7 +398,6 @@ function monthlyOverview() {
   const months = [...byMonth.values()].sort((a, b) => a.ym.localeCompare(b.ym));
   const balances = currentBalances();
   let cumulative = 0;
-  let goal = null;
   let prev = null;
   for (const m of months) {
     m.total = m.income - m.expenses;
@@ -402,9 +411,8 @@ function monthlyOverview() {
     const bal = balances.length ? totalBalanceAt(`${m.ym}-31`, balances) : null;
     m.balance = bal?.total ?? null;
     m.balanceMissing = bal?.missing || [];
-    if (state.goals?.[m.ym] != null) goal = state.goals[m.ym];
-    m.goal = goal;
-    m.goalReached = goal != null && m.balance != null ? m.balance >= goal : null;
+    m.goal = yearGoals()[m.ym.slice(0, 4)] ?? null;
+    m.goalReached = m.goal != null && m.balance != null ? m.balance >= m.goal : null;
     prev = m;
   }
   return months.reverse();
@@ -429,14 +437,18 @@ function renderOverview() {
     <td class="num">${pct(m.salaryShare)}</td>
     <td>${m.savingRate == null ? '—' : yesNo(m.minOk, 'Ok', 'No')}</td>
     <td class="num"${m.balanceMissing.length ? ` title="Esclusi (storico non importato): ${esc(m.balanceMissing.join(', '))}"` : ''}>${m.balance == null ? '—' : eur(m.balance)}${m.balanceMissing.length ? '<sup>*</sup>' : ''}</td>
-    <td class="num"><button class="link" data-goal="${m.ym}" title="Imposta l'obiettivo da questo mese in poi">${m.goal == null ? 'imposta' : eur(m.goal)}</button></td>
+    <td class="num">${m.goal == null ? '—' : eur(m.goal)}</td>
     <td>${yesNo(m.goalReached)}</td>
     <td>${m.invested > 0.005 ? `<span class="badge ok">Sì</span> <span class="muted">${eur(m.invested)}</span>` : '<span class="badge ko">No</span>'}</td>
   </tr>`;
   // raggruppato per anno, con una riga di totale per anno
   const years = [...new Set(months.map((m) => m.ym.slice(0, 4)))];
+  fillSelect($('#ov-year'), years.map((y) => [y, y]));
+  const y = $('#ov-year').value;
+  $('#ov-goal-year').textContent = y;
+  $('#ov-goal').value = yearGoals()[y] ?? '';
   $('#ov-table').innerHTML = months.length ? `<thead><tr>${head.map((h, i) => `<th${i && i !== 9 && i < 12 ? ' style="text-align:right"' : ''}>${h}</th>`).join('')}</tr></thead>
-    ${years.map((y) => {
+    ${[y].map((y) => {
       const ms = months.filter((m) => m.ym.startsWith(y));
       const inc = ms.reduce((s, m) => s + m.income, 0);
       const exp = ms.reduce((s, m) => s + m.expenses, 0);
@@ -445,10 +457,21 @@ function renderOverview() {
       return `<tbody><tr class="year"><td>${y}</td><td class="num pos">${eur(inc)}</td><td class="num neg">${eur(exp)}</td>
         <td class="num ${cls(inc - exp)}">${eur(inc - exp)}</td><td class="num">${pct(inc ? (inc - exp) / inc : null)}</td>
         <td class="num">${sal ? eur(sal) : '—'}</td><td></td><td class="num">${eur(ms[0].cumulative)}</td>
-        <td class="num">${pct(sal ? exp / sal : null)}</td><td></td><td class="num">${ms[0].balance == null ? '—' : eur(ms[0].balance)}</td><td></td><td></td>
+        <td class="num">${pct(sal ? exp / sal : null)}</td><td></td><td class="num">${ms[0].balance == null ? '—' : eur(ms[0].balance)}</td>
+        <td class="num">${ms[0].goal == null ? '—' : eur(ms[0].goal)}</td><td>${ms[0].goalReached == null ? '' : `<span class="badge ${ms[0].goalReached ? 'ok' : 'ko'}">${ms[0].goalReached ? 'Sì' : 'No'}</span>`}</td>
         <td class="num">${inv > 0.005 ? eur(inv) : ''}</td></tr>${ms.map(row).join('')}</tbody>`;
     }).join('')}` : '<tr><td class="empty">Nessun movimento importato</td></tr>';
 }
+
+$('#ov-year').addEventListener('change', renderOverview);
+$('#ov-goal').addEventListener('change', (e) => {
+  const y = $('#ov-year').value;
+  state.yearGoals = yearGoals();
+  if (e.target.value === '') delete state.yearGoals[y];
+  else state.yearGoals[y] = Number(e.target.value);
+  persist();
+  renderOverview();
+});
 
 $('#ov-min').addEventListener('change', (e) => {
   state.settings.minSaving = Math.max(0, Number(e.target.value) || 0) / 100;
@@ -456,19 +479,6 @@ $('#ov-min').addEventListener('change', (e) => {
   renderOverview();
 });
 $('#ov-table').addEventListener('click', (e) => {
-  const g = e.target.closest('[data-goal]');
-  if (g) {
-    const ym = g.dataset.goal;
-    const cur = monthlyOverview().find((m) => m.ym === ym)?.goal;
-    const v = prompt(`Obiettivo di saldo da ${MONTH_NAMES[Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)} in poi (vuoto per toglierlo):`, cur ?? '');
-    if (v === null) return;
-    state.goals = state.goals || {};
-    if (v.trim() === '') delete state.goals[ym];
-    else if (!Number.isNaN(Number(v.replace(',', '.')))) state.goals[ym] = Number(v.replace(',', '.'));
-    persist();
-    renderOverview();
-    return;
-  }
   const r = e.target.closest('tr[data-month]');
   if (!r) return;
   $('#f-period').value = $('#f-period').value === r.dataset.month ? '' : r.dataset.month;
