@@ -6,6 +6,9 @@ import { CATEGORIES, categoryType } from './categories.js';
 import { load, save, addTransactions, applyCategory, linkTransfers, matchExisting, findSavedDuplicates, newId,
   CASH, cashBalance, accountFlows, counterpartAccount } from './store.js';
 
+// Aggiornare anche version.json: se il browser ha in cache una versione vecchia compare un avviso
+export const VERSION = '2026-10-30.4';
+
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
 let state = load();
@@ -157,16 +160,27 @@ function currentBalances() {
     const last = later.reduce((d, t) => (t.date > d ? t.date : d), b.date || '');
     return [acc, { ...b, available: b.available + delta, date: last, rolled: later.length, from: b.date }];
   });
-  // salvadanai: somma dei trasferimenti interni (giusta se hai importato tutta la storia del conto)
+  // "tasche" di un conto (salvadanaio, investimenti, altre valute): soldi spostati dentro meno soldi ripresi.
+  // Se ne imposti il valore a mano (es. investimenti che cambiano valore) si parte da quello.
   const out = [];
   for (const entry of list) {
     out.push(entry);
     const [acc] = entry;
-    const moves = state.transactions.filter((t) => t.account === acc && t.subcategory === 'Salvadanaio e conti deposito');
-    const saved = -moves.reduce((s, t) => s + t.amount, 0);
-    if (moves.length && Math.abs(saved) > 0.005 && !state.balances[`${acc} · salvadanaio`]) {
-      const last = moves.reduce((d, t) => (t.date > d ? t.date : d), '');
-      out.push([`${acc} · salvadanaio`, { available: saved, date: last, savings: true }]);
+    const pockets = new Map();
+    for (const t of state.transactions) {
+      if (t.account !== acc || t.category !== 'Trasferimenti') continue;
+      const other = counterpartAccount(t, state);
+      if (other && other.startsWith(`${acc} · `)) pockets.set(other, [...(pockets.get(other) || []), t]);
+    }
+    for (const name of Object.keys(state.balances || {})) if (name.startsWith(`${acc} · `) && !pockets.has(name)) pockets.set(name, []);
+    for (const [name, moves] of pockets) {
+      const manual = state.balances?.[name];
+      const counted = manual ? moves.filter((t) => t.date > manual.date) : moves;
+      const value = (manual ? manual.available : 0) - counted.reduce((s, t) => s + t.amount, 0);
+      // senza un valore impostato a mano, una tasca "in negativo" vuol dire che manca l'origine dei soldi
+      if (!manual && value < 0.005) continue;
+      const last = counted.reduce((d, t) => (t.date > d ? t.date : d), manual?.date || '');
+      out.push([name, { available: value, date: last, pocket: true, manual: !!manual, from: manual?.date }]);
     }
   }
   return out;
@@ -181,13 +195,17 @@ function renderBalances() {
     `<div class="tile"><div class="k">${esc(acc)}${b.date ? ` · al ${b.date.slice(8)}/${b.date.slice(5, 7)}/${b.date.slice(0, 4)}` : ''}</div>
       <div class="v">${eur(b.available)}</div>
       ${b.pending && !b.rolled ? `<div class="muted">contabile ${eur(b.booked)} · in sospeso ${eur(b.pending)}</div>` : ''}
-      ${b.savings ? '<div class="muted">calcolato dai trasferimenti verso/da il salvadanaio</div>' : ''}
+      ${b.pocket ? `<div class="muted">${b.manual ? `valore impostato al ${b.from.slice(8)}/${b.from.slice(5, 7)}${b.date !== b.from ? ' + trasferimenti successivi' : ''}` : 'soldi spostati dentro meno quelli ripresi'}</div>
+        <button class="link" data-setbal="${esc(acc)}">${/investiment/.test(acc) ? 'Aggiorna valore' : 'Imposta saldo esatto'}</button>` : ''}
       ${b.estimated ? `<div class="muted">somma dei movimenti importati dal ${b.from.slice(8)}/${b.from.slice(5, 7)}/${b.from.slice(0, 4)} (giusta se parti dall'apertura del conto)</div>
         <button class="link" data-setbal="${esc(acc)}">Imposta saldo esatto</button>` : ''}
       ${b.rolled ? `<div class="muted">saldo ${b.manual ? 'impostato' : 'estratto'} al ${b.from.slice(8)}/${b.from.slice(5, 7)} + ${b.rolled} movimenti successivi</div>` : ''}
+      ${b.manual && !b.cash && !b.pocket ? `<button class="link" data-setbal="${esc(acc)}">Aggiorna saldo</button>` : ''}
       ${b.cash ? `<div class="muted">${b.withdrawn ? `+ prelievi ${eur(b.withdrawn)} ` : ''}${b.moves ? `${b.moves < 0 ? '−' : '+'} spese registrate ${eur(Math.abs(b.moves))}` : ''}</div>
         <button class="link" data-setbal="${esc(acc)}">Aggiorna saldo</button>` : ''}</div>`).join('')}
     ${state.balances?.[CASH] ? '' : `<div class="tile"><div class="k">💵 Contanti</div><div class="v muted">—</div><button class="link" data-setbal="${CASH}">Imposta saldo contanti</button></div>`}
+    <div class="tile"><div class="k">Altro conto</div><div class="muted">PayPal, buoni pasto, investimenti… senza estratto conto</div>
+      <button class="link" data-setbal="">+ Aggiungi con saldo</button></div>
     <div class="tile"><div class="k">Totale conti</div><div class="v">${eur(total)}</div></div></div>`;
 }
 
@@ -199,15 +217,19 @@ document.addEventListener('click', (e) => {
 
 function setBalanceDialog(acc) {
   const isCash = acc === CASH;
-  const current = isCash ? cashBalance(state) : currentBalances().find(([a]) => a === acc)?.[1];
+  const isNew = !acc;
+  const isPocket = acc.includes(' · ');
+  const current = isNew ? null : isCash ? cashBalance(state) : currentBalances().find(([a]) => a === acc)?.[1];
   const today = new Date().toISOString().slice(0, 10);
   const dlg = $('#dlg');
   dlg.innerHTML = `<form method="dialog">
-    <h2>${isCash ? '💵 Saldo contanti' : `Saldo ${esc(acc)}`}</h2>
+    <h2>${isCash ? '💵 Saldo contanti' : isNew ? 'Aggiungi un conto' : `Saldo ${esc(acc)}`}</h2>
+    ${isNew ? `<label>Nome del conto<input name="name" required placeholder="es. PayPal" list="acc-names"><datalist id="acc-names">${['PayPal', 'Revolut · investimenti', 'BBVA · salvadanaio'].map((n) => `<option value="${n}">`).join('')}</datalist></label>
+      <p class="hint">Per una "tasca" di un conto usa il formato <i>Conto · nome</i> (es. Revolut · investimenti).</p>` : ''}
     ${current ? `<p class="hint">Saldo calcolato ora: <b>${eur(current.available)}</b></p>` : ''}
     <label>Quanto hai ${isCash ? 'in contanti' : 'sul conto'} oggi?<input name="amount" type="number" step="0.01" required value="${current ? current.available.toFixed(2) : ''}"></label>
     <label>Alla data<input name="date" type="date" value="${today}" required></label>
-    ${current ? `<label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="diff" checked>
+    ${current && !isPocket ? `<label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="diff"${isCash ? ' checked' : ''}>
       Registra la differenza come movimento (es. spese in contanti che non hai segnato)</label>` : ''}
     <div class="toolbar"><button value="ok">Salva</button><button value="cancel" class="secondary" formnovalidate>Annulla</button></div>
   </form>`;
@@ -216,6 +238,8 @@ function setBalanceDialog(acc) {
     const f = Object.fromEntries(new FormData(dlg.querySelector('form')));
     const amount = Number(f.amount);
     if (Number.isNaN(amount)) return;
+    if (isNew) acc = f.name.trim().replace(/\s*·\s*/g, ' · ');
+    if (!acc) return;
     const diff = current ? Math.round((amount - current.available) * 100) / 100 : 0;
     if (f.diff && diff) {
       state.transactions.push(applyCategory({
@@ -226,7 +250,7 @@ function setBalanceDialog(acc) {
       state.transactions.sort((a, b) => b.date.localeCompare(a.date));
     }
     state.balances[acc] = { date: f.date, booked: amount, pending: 0, available: amount, manual: true, setAt: Date.now() };
-    state.accounts[acc] = state.accounts[acc] || {};
+    if (!acc.includes(' · ')) state.accounts[acc] = state.accounts[acc] || {};
     persist();
     render();
   };
@@ -792,3 +816,14 @@ function render() {
   if (active === 'tab-accounts') renderAccounts();
 }
 render();
+
+$('#version').textContent = `v${VERSION}`;
+fetch('version.json', { cache: 'no-store' }).then((r) => r.json()).then(({ version }) => {
+  if (version && version !== VERSION) {
+    const bar = document.createElement('div');
+    bar.className = 'update-bar';
+    bar.innerHTML = `C'è una versione nuova dell'app (${esc(version)}). <button class="link">Ricarica</button>`;
+    bar.querySelector('button').onclick = () => location.reload();
+    document.body.prepend(bar);
+  }
+}).catch(() => {});
