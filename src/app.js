@@ -7,7 +7,7 @@ import { load, save, addTransactions, applyCategory, linkTransfers, matchExistin
   CASH, cashBalance, accountFlows, counterpartAccount } from './store.js';
 
 // Aggiornare anche version.json: se il browser ha in cache una versione vecchia compare un avviso
-export const VERSION = '2026-10-30.6';
+export const VERSION = '2026-10-30.7';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -392,7 +392,8 @@ function monthlyOverview() {
     if (type === 'income') m.income += t.amount;
     if (type === 'expense') m.expenses -= t.amount;
     if (t.subcategory === 'Stipendio') m.salary += t.amount;
-    if (t.subcategory === 'Investimenti e risparmi' || t.subcategory === 'Salvadanaio e conti deposito') m.invested -= t.amount;
+    // il salvadanaio è una parte del conto (soldi messi da parte), non un investimento
+    if (t.subcategory === 'Investimenti e risparmi') m.invested -= t.amount;
     byMonth.set(ym, m);
   }
   const months = [...byMonth.values()].sort((a, b) => a.ym.localeCompare(b.ym));
@@ -422,7 +423,7 @@ function renderOverview() {
   $('#ov-min').value = Math.round((state.settings.minSaving ?? 0.2) * 100);
   const months = monthlyOverview();
   const head = ['Data', 'Entrate', 'Uscite', 'Totale', 'Risparmio %', 'Salario', 'Trend mensile %', 'Saldo cumulativo',
-    'Incidenza Salario %', 'Risparmio minimo', 'Saldo', 'Obiettivo', 'Obiettivo raggiunto', 'Investimento'];
+    'Incidenza Salario %', 'Risparmio minimo', 'Saldo', 'Obiettivo', 'Investimento'];
   const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
   const yesNo = (v, yes = 'Sì', no = 'No') => (v == null ? '—' : `<span class="badge ${v ? 'ok' : 'ko'}">${v ? yes : no}</span>`);
   const row = (m) => `<tr data-month="${m.ym}" class="${$('#f-period').value === m.ym ? 'sel' : ''}">
@@ -437,7 +438,6 @@ function renderOverview() {
     <td class="num">${pct(m.salaryShare)}</td>
     <td>${m.savingRate == null ? '—' : yesNo(m.minOk, 'Ok', 'No')}</td>
     <td class="num"${m.balanceMissing.length ? ` title="Esclusi (storico non importato): ${esc(m.balanceMissing.join(', '))}"` : ''}>${m.balance == null ? '—' : eur(m.balance)}${m.balanceMissing.length ? '<sup>*</sup>' : ''}</td>
-    <td class="num">${m.goal == null ? '—' : eur(m.goal)}</td>
     <td>${yesNo(m.goalReached)}</td>
     <td>${m.invested > 0.005 ? `<span class="badge ok">Sì</span> <span class="muted">${eur(m.invested)}</span>` : '<span class="badge ko">No</span>'}</td>
   </tr>`;
@@ -447,7 +447,7 @@ function renderOverview() {
   const y = $('#ov-year').value;
   $('#ov-goal-year').textContent = y;
   $('#ov-goal').value = yearGoals()[y] ?? '';
-  $('#ov-table').innerHTML = months.length ? `<thead><tr>${head.map((h, i) => `<th${i && i !== 9 && i < 12 ? ' style="text-align:right"' : ''}>${h}</th>`).join('')}</tr></thead>
+  $('#ov-table').innerHTML = months.length ? `<thead><tr>${head.map((h, i) => `<th${i && i !== 9 && i !== 12 ? ' style="text-align:right"' : ''}>${h}</th>`).join('')}</tr></thead>
     ${[y].map((y) => {
       const ms = months.filter((m) => m.ym.startsWith(y));
       const inc = ms.reduce((s, m) => s + m.income, 0);
@@ -458,7 +458,7 @@ function renderOverview() {
         <td class="num ${cls(inc - exp)}">${eur(inc - exp)}</td><td class="num">${pct(inc ? (inc - exp) / inc : null)}</td>
         <td class="num">${sal ? eur(sal) : '—'}</td><td></td><td class="num">${eur(ms[0].cumulative)}</td>
         <td class="num">${pct(sal ? exp / sal : null)}</td><td></td><td class="num">${ms[0].balance == null ? '—' : eur(ms[0].balance)}</td>
-        <td class="num">${ms[0].goal == null ? '—' : eur(ms[0].goal)}</td><td>${ms[0].goalReached == null ? '' : `<span class="badge ${ms[0].goalReached ? 'ok' : 'ko'}">${ms[0].goalReached ? 'Sì' : 'No'}</span>`}</td>
+        <td class="num">${ms[0].goal == null ? '—' : eur(ms[0].goal)}</td>
         <td class="num">${inv > 0.005 ? eur(inv) : ''}</td></tr>${ms.map(row).join('')}</tbody>`;
     }).join('')}` : '<tr><td class="empty">Nessun movimento importato</td></tr>';
 }
