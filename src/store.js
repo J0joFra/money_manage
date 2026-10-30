@@ -38,6 +38,7 @@ export const newId = () => Date.now().toString(36) + (seq++).toString(36) + Math
 
 export function applyCategory(t, state) {
   if (t.catSource === 'manuale') return t;
+  if (t.linkedId && t.catSource === 'abbinato') return t;
   const c = categorize(t, { ownNames: state.settings.ownNames, userRules: state.rules });
   return { ...t, category: c.category, subcategory: c.subcategory, catSource: c.source };
 }
@@ -71,4 +72,52 @@ export function addTransactions(state, txs) {
   }
   state.transactions.sort((a, b) => b.date.localeCompare(a.date));
   return { added, skipped };
+}
+
+// Categorie che possono essere "sostituite" da un giroconto riconosciuto per abbinamento
+const pinned = (t) => t.catSource === 'manuale' || t.catSource === 'regola';
+const LINKABLE = (t) => !pinned(t) &&
+  (t.category === 'Trasferimenti' || t.category === 'Da categorizzare' || (t.category === 'Entrate' && t.subcategory === 'Altro'));
+
+const DAY = 86400000;
+const LINK_MAX_DAYS = 4;
+
+/**
+ * Riconosce i giroconti abbinando un'uscita su un conto con un'entrata dello stesso importo
+ * su un altro conto entro pochi giorni (es. BBVA -1000 "TRASF" -> Revolut +1000).
+ * Entrambi i movimenti diventano Trasferimenti e vengono collegati tra loro (linkedId).
+ */
+export function linkTransfers(state) {
+  const txs = state.transactions;
+  const byId = new Map(txs.map((t) => [t.id, t]));
+  // scollega abbinamenti non più validi (movimento cancellato o ricategorizzato a mano)
+  const broken = txs.filter((t) => {
+    if (!t.linkedId) return false;
+    const other = byId.get(t.linkedId);
+    return !other || other.linkedId !== t.id || pinned(t) || pinned(other);
+  });
+  for (const t of broken) {
+    delete t.linkedId;
+    if (t.catSource === 'abbinato') Object.assign(t, applyCategory({ ...t, catSource: 'auto' }, state));
+  }
+  const incoming = txs.filter((t) => t.amount > 0 && !t.linkedId && LINKABLE(t));
+  for (const out of txs) {
+    if (out.amount >= 0 || out.linkedId || !LINKABLE(out)) continue;
+    const d = Date.parse(out.date);
+    let best = null;
+    for (const inc of incoming) {
+      if (inc.linkedId || inc.account === out.account || Math.abs(inc.amount + out.amount) > 0.005) continue;
+      const diff = Math.abs(Date.parse(inc.date) - d) / DAY;
+      if (diff <= LINK_MAX_DAYS && (!best || diff < best.diff)) best = { inc, diff };
+    }
+    if (!best) continue;
+    const { inc } = best;
+    out.linkedId = inc.id;
+    inc.linkedId = out.id;
+    for (const t of [out, inc]) {
+      // mantieni la sottocategoria se era già un trasferimento (es. Ricarica Satispay)
+      if (t.category !== 'Trasferimenti') Object.assign(t, { category: 'Trasferimenti', subcategory: 'Giroconto tra miei conti' });
+      t.catSource = 'abbinato';
+    }
+  }
 }

@@ -3,14 +3,14 @@ import { extractLines } from './pdf-text.js';
 import { parseStatement, PARSERS } from './parsers/index.js';
 import { parseCsv, toCsv } from './csv.js';
 import { CATEGORIES, categoryType } from './categories.js';
-import { load, save, addTransactions, applyCategory, newId } from './store.js';
+import { load, save, addTransactions, applyCategory, linkTransfers, newId } from './store.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs', import.meta.url).href;
 
 let state = load();
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const eur = (n, cur = 'EUR') => new Intl.NumberFormat('it-IT', { style: 'currency', currency: cur }).format(n);
+const eur = (n, cur = 'EUR') => new Intl.NumberFormat('it-IT', { style: 'currency', currency: cur }).format(n + 0); // + 0 evita "-0,00 €"
 const MONTHS = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 const monthLabel = (ym) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
 const persist = () => save(state);
@@ -90,6 +90,8 @@ function renderSummary() {
     ['Da categorizzare', uncategorized ? `<button class="link" data-go="list" data-cat="Da categorizzare">${uncategorized} movimenti</button>` : '0', ''],
   ].map(([k, v, c]) => `<div class="tile"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join('');
 
+  renderTransfers(txs, period);
+
   // per categoria
   const byCat = new Map();
   for (const t of expenses) {
@@ -128,6 +130,37 @@ function renderSummary() {
   for (const t of expenses) byPayee.set(t.payee, (byPayee.get(t.payee) || 0) - t.amount);
   const top = [...byPayee.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   $('#sum-payees').innerHTML = `<table class="tx">${top.map(([p, v]) => `<tr><td>${esc(p)}</td><td class="num">${eur(v)}</td></tr>`).join('')}</table>`;
+}
+
+// Soldi spostati tra i tuoi conti e contanti
+function renderTransfers(txs, period) {
+  const transfers = txs.filter((t) => categoryType(t.category) === 'transfer');
+  const groups = [
+    ['Giroconti tra i tuoi conti', 'Giroconto tra miei conti'],
+    ['Ricariche Satispay', 'Ricarica Satispay'],
+    ['Verso risparmi e investimenti', 'Investimenti e risparmi'],
+    ['Prelievi di contanti', 'Prelievo contanti'],
+    ['Altri trasferimenti', 'Altro'],
+  ];
+  const rows = groups.map(([label, sub]) => {
+    const list = transfers.filter((t) => t.subcategory === sub);
+    // per giroconti e ricariche conta solo il lato in uscita (l'entrata è lo stesso denaro)
+    const moved = sub === 'Investimenti e risparmi'
+      ? -list.reduce((s, t) => s + t.amount, 0)
+      : -list.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0) || list.reduce((s, t) => s + t.amount, 0);
+    return list.length ? `<tr><td>${label}<div class="muted">${list.length} moviment${list.length === 1 ? 'o' : 'i'}</div></td><td class="num">${eur(moved)}</td></tr>` : '';
+  }).join('');
+
+  // contanti: prelievi (fino alla fine del periodo) + movimenti registrati sul conto "Contanti"
+  const end = period ? period + '\uffff' : '\uffff';
+  const upTo = state.transactions.filter((t) => t.date <= end);
+  const withdrawn = -upTo.filter((t) => t.subcategory === 'Prelievo contanti').reduce((s, t) => s + t.amount, 0);
+  const cashMoves = upTo.filter((t) => /^contanti$/i.test(t.account || '')).reduce((s, t) => s + t.amount, 0);
+  $('#sum-transfers').innerHTML = (rows ? `<table class="tx">${rows}</table>` : '<p class="hint">Nessun trasferimento nel periodo.</p>') +
+    `<h2 class="mt">💵 Contanti in tasca (stima)</h2>
+     <p class="v ${withdrawn + cashMoves < 0 ? 'neg' : ''}" style="font-size:22px;font-weight:700;margin:0">${eur(withdrawn + cashMoves)}</p>
+     <p class="hint">Prelievi ${eur(withdrawn)} − spese in contanti ${eur(-cashMoves)}.
+       Registra le spese in contanti con <button class="link" data-go="list">+ Aggiungi a mano</button> (conto "Contanti").</p>`;
 }
 
 $('#sum-period').addEventListener('change', renderSummary);
@@ -177,10 +210,19 @@ function txRow(t, { editable = true } = {}) {
     <td><span class="payee">${esc(t.payee)}</span>${t.pending ? '<span class="tag">in sospeso</span>' : ''}
       <div class="muted">${esc(t.note)}${t.account ? ' · ' + esc(t.account) : ''}</div></td>
     <td><select data-act="cat">${categoryOptions(`${t.category}|${t.subcategory}`)}</select>
-      ${t.catSource === 'manuale' ? '' : `<div class="muted">${t.catSource === 'regola' ? 'da tua regola' : 'automatica'}</div>`}</td>
+      ${t.catSource === 'manuale' ? '' : `<div class="muted">${catSourceLabel(t)}</div>`}</td>
     <td class="num ${t.amount < 0 ? 'neg' : 'pos'}">${eur(t.amount, t.currency)}</td>
     ${editable ? `<td><button class="link" data-act="del" title="Elimina">✕</button></td>` : ''}
   </tr>`;
+}
+
+function catSourceLabel(t) {
+  if (t.catSource === 'regola') return 'da tua regola';
+  if (t.catSource === 'abbinato') {
+    const other = state.transactions.find((x) => x.id === t.linkedId);
+    return other ? `↔ ${t.amount < 0 ? 'verso' : 'da'} ${esc(other.account)} (${other.date.slice(8)}/${other.date.slice(5, 7)})` : 'giroconto';
+  }
+  return 'automatica';
 }
 
 function renderList() {
@@ -206,6 +248,7 @@ $('#list-table').addEventListener('click', (e) => {
   const t = state.transactions.find((x) => x.id === id);
   if (!confirm(`Eliminare "${t.payee}" ${eur(t.amount)} del ${t.date}?`)) return;
   state.transactions = state.transactions.filter((x) => x.id !== id);
+  linkTransfers(state);
   persist();
   renderList();
 });
@@ -232,6 +275,7 @@ function changeCategory(t, value, done) {
         recategorize();
       }
     }
+    linkTransfers(state);
     persist();
     done();
   };
@@ -240,6 +284,7 @@ function changeCategory(t, value, done) {
 
 function recategorize(list = state.transactions) {
   for (let i = 0; i < list.length; i++) Object.assign(list[i], applyCategory(list[i], state));
+  linkTransfers(state);
 }
 
 $('#btn-export').addEventListener('click', () => download(`spese_${new Date().toISOString().slice(0, 10)}.csv`, toCsv(filteredList()), 'text/csv'));
@@ -363,6 +408,7 @@ function renderImport(id) {
     const act = e.target.dataset.act;
     if (act === 'save') {
       const { added, skipped } = addTransactions(state, imp.txs);
+      linkTransfers(state);
       persist();
       pending.delete(id);
       box.innerHTML = `<h2>${esc(imp.file.name)}</h2><p>✅ ${added} movimenti salvati${skipped ? `, ${skipped} già presenti saltati` : ''}.

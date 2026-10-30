@@ -39,7 +39,8 @@ export const RULES = [
   [/^(revolut|n26|bbva|satispay)\b/i, 'Trasferimenti', 'Giroconto tra miei conti'],
   [/\btrasferimento · |\bsalvadanaio\b/i, 'Trasferimenti', 'Investimenti e risparmi'],
   [/conto di investimento|salvadanaio|spazio|pocket|vault|trade republic|scalable|directa|fineco|degiro|moneyfarm/i, 'Trasferimenti', 'Investimenti e risparmi'],
-  [/prelievo|atm\b|bancomat/i, 'Trasferimenti', 'Prelievo contanti', '-'],
+  [/\btrasf\b/i, 'Trasferimenti', 'Giroconto tra miei conti'], // causale che usi per i giroconti
+  [/prelievo|prelevamento|\batm\b|bancomat|cash withdrawal|contante/i, 'Trasferimenti', 'Prelievo contanti', '-'],
 
   // finanza
   [/paga in 3 rate|klarna|scalapay|afterpay|paypal pay in|\brata\b/i, 'Finanza', 'Rate e BNPL', '-'],

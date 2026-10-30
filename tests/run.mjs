@@ -68,6 +68,26 @@ const unit = [
   [parseDate('2026-10-03'), '2026-10-03'],
   [parseDate('12 settembre 2026'), '2026-09-12'],
 ];
+// abbinamento giroconti tra conti diversi
+import { linkTransfers, applyCategory } from '../src/store.js';
+{
+  const st = { rules: [], settings: { ownNames: [] }, transactions: [] };
+  const mk = (id, account, date, amount, payee, note = '') => applyCategory({ id, account, date, amount, payee, note, currency: 'EUR' }, st);
+  st.transactions = [
+    mk('a', 'BBVA', '2026-09-21', -1000, 'Bonifico', 'Bonifico · XYZ'),
+    mk('b', 'Revolut', '2026-09-23', 1000, 'Bonifico in entrata', 'XYZ'),
+    mk('c', 'Revolut', '2026-09-23', -20, 'Bar Sport', ''),
+    mk('d', 'N26', '2026-09-30', 20, 'LUCA VERDI', 'Riferimento: pizza'),
+    mk('e', 'BBVA', '2026-09-01', -300, 'Bonifico', 'Bonifico · ABC'),
+    mk('f', 'Revolut', '2026-09-15', 300, 'Bonifico', 'ABC'),
+  ];
+  linkTransfers(st);
+  const by = Object.fromEntries(st.transactions.map((t) => [t.id, t]));
+  unit.push([by.a.linkedId, 'b'], [by.b.category, 'Trasferimenti'], [by.c.linkedId, undefined], [by.e.linkedId, undefined]);
+  by.b.catSource = 'manuale';
+  linkTransfers(st);
+  unit.push([by.a.linkedId, undefined], [by.a.category, 'Da categorizzare']);
+}
 unit.forEach(([a, b], i) => { if (a !== b) { failed++; console.log(`FAIL unit #${i}: ${a} !== ${b}`); } });
 console.log(`${unit.length} test unitari, ${ran} fixture PDF`);
 process.exit(failed ? 1 : 0);
